@@ -212,6 +212,8 @@ typedef void *(CPERLscope(*protect_proc_t)) (pTHX_ volatile JMPENV *pcur_env,
 #define CATCH_SET(v)		(PL_top_env->je_mustcatch = (v))
 
 
+#include "mydtrace.h"
+
 struct cop {
     BASEOP
     char *	cop_label;	/* label for this construct */
@@ -336,6 +338,10 @@ struct block_sub {
  * decremented by LEAVESUB, the other by LEAVE. */
 
 #define PUSHSUB_BASE(cx)						\
+	ENTRY_PROBE(GvENAME(CvGV(cv)),		       			\
+		CopFILE((COP*)CvSTART(cv)),				\
+		CopLINE((COP*)CvSTART(cv)));				\
+									\
 	cx->blk_sub.cv = cv;						\
 	cx->blk_sub.olddepth = CvDEPTH(cv);				\
 	cx->blk_sub.hasargs = hasargs;					\
@@ -385,6 +391,10 @@ struct block_sub {
 
 #define POPSUB(cx,sv)							\
     STMT_START {							\
+	RETURN_PROBE(GvENAME(CvGV((CV*)cx->blk_sub.cv)),		\
+		CopFILE((COP*)CvSTART((CV*)cx->blk_sub.cv)),		\
+		CopLINE((COP*)CvSTART((CV*)cx->blk_sub.cv)));		\
+									\
 	if (CxHASARGS(cx)) {						\
 	    POP_SAVEARRAY();						\
 	    /* abandon @_ if it got reified */				\

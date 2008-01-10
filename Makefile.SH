@@ -210,6 +210,16 @@ case "$osname" in
 	;;
 esac
 
+dtrace_h=''
+dtrace_o=''
+case "$usedtrace" in
+define|true)
+	dtrace_h='perldtrace.h' 
+	$dtrace -G -s perldtrace.d -o perldtrace.tmp >/dev/null 2>&1 \
+		&& rm -f perldtrace.tmp && dtrace_o='perldtrace$(OBJ_EXT)'
+	;;
+esac
+
 echo "Extracting Makefile (with variable substitutions)"
 $spitshell >Makefile <<!GROK!THIS!
 # Makefile.SH
@@ -303,6 +313,10 @@ PATH_SEP = $p_
 # then you'll need to change this, or override it on the make command line.
 VALGRIND=valgrind
 
+DTRACE = $dtrace
+DTRACE_H = $dtrace_h
+DTRACE_O = $dtrace_o
+
 FIRSTMAKEFILE = $firstmakefile
 
 # Any special object files needed by this architecture, e.g. os2/os2.obj
@@ -386,7 +400,7 @@ h1 = EXTERN.h INTERN.h XSUB.h av.h config.h cop.h cv.h dosish.h
 h2 = embed.h form.h gv.h handy.h hv.h keywords.h mg.h op.h opcode.h
 h3 = pad.h patchlevel.h perl.h perlapi.h perly.h pp.h proto.h regcomp.h
 h4 = regexp.h scope.h sv.h unixish.h util.h iperlsys.h thread.h
-h5 = utf8.h warnings.h
+h5 = utf8.h warnings.h mydtrace.h
 h = $(h1) $(h2) $(h3) $(h4) $(h5)
 
 c1 = $(mallocsrc) av.c scope.c op.c doop.c doio.c dump.c hv.c mg.c reentr.c
@@ -400,7 +414,8 @@ obj1 = $(mallocobj) gv$(OBJ_EXT) toke$(OBJ_EXT) perly$(OBJ_EXT) op$(OBJ_EXT) pad
 obj2 = hv$(OBJ_EXT) av$(OBJ_EXT) perl$(OBJ_EXT) run$(OBJ_EXT) pp_hot$(OBJ_EXT) sv$(OBJ_EXT) pp$(OBJ_EXT) scope$(OBJ_EXT) pp_ctl$(OBJ_EXT) pp_sys$(OBJ_EXT)
 obj3 = doop$(OBJ_EXT) doio$(OBJ_EXT) regexec$(OBJ_EXT) utf8$(OBJ_EXT) taint$(OBJ_EXT) deb$(OBJ_EXT) universal$(OBJ_EXT) xsutils$(OBJ_EXT) globals$(OBJ_EXT) perlio$(OBJ_EXT) perlapi$(OBJ_EXT) numeric$(OBJ_EXT) mathoms$(OBJ_EXT) locale$(OBJ_EXT) pp_pack$(OBJ_EXT) pp_sort$(OBJ_EXT)
 
-obj = $(obj1) $(obj2) $(obj3) $(ARCHOBJS)
+ndt_obj = $(obj1) $(obj2) $(obj3) $(ARCHOBJS)
+obj = $(ndt_obj) $(DTRACE_O)
 
 lintflags = \
     -b \
@@ -621,6 +636,26 @@ if test -r $Makefile_s ; then
 Makefile: $Makefile_s
 !GROK!THIS!
 else
+	case "$dtrace_h" in
+	?*)
+		$spitshell >>Makefile <<'!NO!SUBS!'
+$(DTRACE_H): perldtrace.d
+	$(DTRACE) -h -s perldtrace.d -o $(DTRACE_H)
+
+mydtrace.h: $(DTRACE_H)
+
+!NO!SUBS!
+		;;
+	esac
+	case "$dtrace_o" in
+	?*)
+		$spitshell >>Makefile <<'!NO!SUBS!'
+$(DTRACE_O): perldtrace.d
+	$(DTRACE) -G -s perldtrace.d -o $(DTRACE_O) $(ndt_obj)
+
+!NO!SUBS!
+		;;
+    esac
 	$spitshell >>Makefile <<'!NO!SUBS!'
 $(LIBPERL): $& $(obj) $(DYNALOADER) $(LIBPERLEXPORT)
 !NO!SUBS!
@@ -1151,6 +1186,7 @@ _mopup:
 	-rm -f perl$(EXE_EXT) suidperl$(EXE_EXT) miniperl$(EXE_EXT) $(LIBPERL) libperl.* microperl
 	-rm -f opcode.h-old opnames.h-old pp.sym-old pp_proto.h-old
 	-rm -f config.arch config.over
+	-rm -f config.over $(DTRACE_H)
 
 # Do not 'make _tidy' directly.
 _tidy:

@@ -30,7 +30,7 @@ use Locale::Maketext::Simple    Class => 'CPANPLUS', Style => 'gettext';
 
 local $Params::Check::VERBOSE = 1;
 
-$VERSION = '0.34';
+$VERSION = '0.35_03';
 
 =pod
 
@@ -311,8 +311,9 @@ sub prepare {
         my $env = ENV_CPANPLUS_IS_EXECUTING;
         local $ENV{$env} = BUILD_PL->( $dir );
         my $run_perl    = $conf->get_program('perlwrapper');
+        my $cmd = [$perl, $run_perl, BUILD_PL->($dir), @buildflags];
 
-        unless ( scalar run(    command => [$perl, $run_perl, BUILD_PL->($dir), @buildflags],
+        unless ( scalar run(    command => $cmd,
                                 buffer  => \$prep_output,
                                 verbose => $verbose ) 
         ) {
@@ -378,7 +379,7 @@ sub _find_prereqs {
 
     my $content;
 
-    if ( version->new( $Module::Build::VERSION ) >= $safe_ver and ! ON_WIN32 ) {
+    if ( version->new( $Module::Build::VERSION ) >= $safe_ver and IPC::Cmd->can_capture_buffer ) {
         my @buildflags = $dist->_buildflags_as_list( $buildflags );
 
         # Use the new Build action 'prereq_data'
@@ -581,9 +582,15 @@ sub create {
             last RUN;
         }
 
-        my $captured;
+        my ($captured, $cmd);
+        if ( ON_VMS ) {
+            $cmd = [$perl, BUILD->($dir), @buildflags];
+        }
+        else {
+            $cmd = [$perl, $run_perl, BUILD->($dir), @buildflags];
+        }
 
-        unless ( scalar run(    command => [$perl, $run_perl, BUILD->($dir), @buildflags],
+        unless ( scalar run(    command => $cmd,
                                 buffer  => \$captured,
                                 verbose => $verbose ) 
         ) {
@@ -604,8 +611,12 @@ sub create {
         ### against 0.2607 on 26/1/2005
         unless( $skiptest ) {
             my $test_output;
-            my $flag    = ON_VMS ? '"test"' : 'test';
-            my $cmd     = [$perl, $run_perl, BUILD->($dir), $flag, @buildflags];
+            if ( ON_VMS ) {
+                $cmd     = [$perl, BUILD->($dir), "test", @buildflags];
+            }
+            else {
+                $cmd     = [$perl, $run_perl, BUILD->($dir), "test", @buildflags];
+            }
             unless ( scalar run(    command => $cmd,
                                     buffer  => \$test_output,
                                     verbose => $verbose ) 
@@ -725,9 +736,13 @@ sub install {
         ### don't worry about loading the right version of M::B anymore
         ### the 'new_from_context' already added the 'right' path to
         ### M::B at the top of the build.pl
-        ### On VMS, flags need to be quoted
-        my $flag    = ON_VMS ? '"install"' : 'install';
-        my $cmd     = [$perl, $run_perl, BUILD->($dir), $flag, @buildflags];
+        my $cmd;
+        if ( ON_VMS ) {
+            $cmd     = [$perl, BUILD->($dir), "install", @buildflags];
+        }
+        else {
+            $cmd     = [$perl, $run_perl, BUILD->($dir), "install", @buildflags];
+        }
         my $sudo    = $conf->get_program('sudo');
         unshift @$cmd, $sudo if $sudo;
 
@@ -741,9 +756,13 @@ sub install {
             $fail++;
         }
     } else {
-        my $install_output;
-        my $flag    = ON_VMS ? '"install"' : 'install';
-        my $cmd     = [$perl, $run_perl, BUILD->($dir), $flag, @buildflags];
+        my ($install_output, $cmd);
+        if ( ON_VMS ) {
+            $cmd     = [$perl, BUILD->($dir), "install", @buildflags];
+        }
+        else {
+            $cmd     = [$perl, $run_perl, BUILD->($dir), "install", @buildflags];
+        }
         unless( scalar run( command => $cmd,
                             buffer  => \$install_output,
                             verbose => $verbose )

@@ -1316,13 +1316,14 @@ Perl_csighandler(int sig)
 #endif
 	   (PL_signals & PERL_SIGNALS_UNSAFE_FLAG))
 	/* Call the perl level handler now--
-	 * with risk we may be in malloc() etc. */
+	 * with risk we may be in malloc() or being destructed etc. */
 #if defined(HAS_SIGACTION) && defined(SA_SIGINFO)
 	(*PL_sighandlerp)(sig, NULL, NULL);
 #else
 	(*PL_sighandlerp)(sig);
 #endif
     else {
+	if (!PL_psig_pend) return;
 	/* Set a flag to say this signal is pending, that is awaiting delivery after
 	 * the current Perl opcode completes */
 	PL_psig_pend[sig]++;
@@ -1330,7 +1331,7 @@ Perl_csighandler(int sig)
 #ifndef SIG_PENDING_DIE_COUNT
 #  define SIG_PENDING_DIE_COUNT 120
 #endif
-	/* And one to say _a_ signal is pending */
+	/* Add one to say _a_ signal is pending */
 	if (++PL_sig_pending >= SIG_PENDING_DIE_COUNT)
 	    Perl_croak(aTHX_ "Maximal count of pending signals (%lu) exceeded",
 		       (unsigned long)SIG_PENDING_DIE_COUNT);

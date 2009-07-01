@@ -141,11 +141,11 @@ sub run {
     my $outfh;
     if (defined $output_file) {
 	open $outfh, '>', $output_file
-	    or die "ERROR: could not open file '$output_file' for writing: $!";
+	    or die "ERROR: could not open file '$output_file' for writing: $!\n";
     }
     else {
 	open $outfh, ">&STDOUT"
-			    or die "ERROR: can't dup STDOUT: $!";
+			    or die "ERROR: can't dup STDOUT: $!\n";
     }
 
     if (defined $cache_dir) {
@@ -156,7 +156,7 @@ sub run {
 	do_crosscheck($outfh, $cache_dir, $force, \@modules);
     }
     else {
-	do_compare(\@modules, $outfh, $cache_dir, $verbose, $use_diff,
+	do_compare(\@modules, $outfh, $output_file, $cache_dir, $verbose, $use_diff,
 	    $reverse, $diff_opts);
     }
 }
@@ -166,7 +166,7 @@ sub run {
 # compare a list of modules against their CPAN equivalents
 
 sub do_compare {
-    my ($modules, $outfh, $cache_dir, $verbose,
+    my ($modules, $outfh, $output_file, $cache_dir, $verbose,
 		$use_diff, $reverse, $diff_opts) = @_;
 
 
@@ -190,6 +190,7 @@ sub do_compare {
 
     my %seen_dist;
     for my $module (@$modules) {
+	warn "Processing $module ...\n" if defined $output_file;
 	print $outfh "\n$module\n" unless $use_diff;
 
 	my $m = $Maintainers::Modules{$module} 
@@ -208,8 +209,15 @@ sub do_compare {
 	}
 	$seen_dist{$dist}++;
 
-	my $cpan_dir = get_distribution($cache_dir, $untar_dir, $module, $dist);
-
+	my $cpan_dir;
+	eval {
+	    $cpan_dir = get_distribution($cache_dir, $untar_dir, $module, $dist)
+	};
+	if ($@) {
+	    print $outfh "  ", $@;
+	    print $outfh "  (skipping)\n";
+	    next;
+	}
 
 	my @perl_files = Maintainers::get_module_files($module);
 
@@ -356,12 +364,13 @@ sub do_crosscheck {
 	    warn "WARNING: $file:$.: line doesn't have three fields (skipping)\n";
 	    next;
 	}
-	$modules{$f[0]} = $f[2];
-
 	my $distro = $f[2];
-	$distro =~ s{^.*/}{};
+	$distro =~ s{^[A-Z]/[A-Z]{2}/}{}; # strip leading A/AB/
+	$modules{$f[0]} = $distro;
 
-	$distros{distro_base($distro)}{$distro} = 1;
+	(my $short_distro = $distro) =~ s{^.*/}{};
+
+	$distros{distro_base($short_distro)}{$distro} = 1;
     }
 
     for my $module (@$modules) {
@@ -373,23 +382,19 @@ sub do_crosscheck {
 	    next;
 	}
 
-
-	# given an try like
+	# given an entry like
 	#   Foo::Bar 1.23 foo-bar-1.23.tar.gz,
 	# first compare the module name against Foo::Bar, and failing that,
 	# against foo-bar
 
 	my $pdist = $m->{DISTRIBUTION};
 	die "ERROR: $module has no DISTRIBUTION entry\n" unless defined $pdist;
-	$pdist =~ s{^.*/}{};
 
 	my $cdist = $modules{$module};
+	(my $short_pdist = $pdist) =~ s{^.*/}{};
 
-	if (defined $cdist) {
-	    $cdist =~ s{^.*/}{};
-	}
-	else {
-	    my $d = $distros{distro_base($pdist)};
+	unless (defined $cdist) {
+	    my $d = $distros{distro_base($short_pdist)};
 	    unless (defined $d) {
 	        print $outfh "\n$module: Can't determine current CPAN entry\n";
 	        next;
@@ -520,7 +525,7 @@ sub get_distribution {
     my ($cache_dir, $untar_dir, $module, $dist) = @_;
 
     $dist =~ m{.+/([^/]+)$}
-	or die "ERROR: $module: invalid DISTRIBUTION name (no AUTHOR/ prefix): $dist";
+	or die "ERROR: $module: invalid DISTRIBUTION name (no AUTHOR/ prefix): $dist\n";
     my $filename = $1;
 
     my $download_dir = $cache_dir || File::Temp::tempdir( CLEANUP => 1 );
@@ -536,18 +541,18 @@ sub get_distribution {
     unless (-f $download_file) {
 	# not cached
 	$dist =~ /^([A-Z])([A-Z])/
-	    or die "ERROR: $module: invalid DISTRIBUTION name (not /^[A-Z]{2}/): $dist";
+	    or die "ERROR: $module: invalid DISTRIBUTION name (not /^[A-Z]{2}/): $dist\n";
 
 	my $url = "http://www.cpan.org/modules/by-authors/id/$1/$1$2/$dist";
 	my_getstore($url, $download_file)
-	    or die "ERROR: Could not fetch '$url'";
+	    or die "ERROR: Could not fetch '$url'\n";
     }
 
     # extract distribution
 
     my $ae = Archive::Extract->new( archive => $download_file);
     $ae->extract( to => $untar_dir )
-	or die "ERROR: failed to extract distribution '$download_file to temp. dir: " . $ae->error();
+	or die "ERROR: failed to extract distribution '$download_file to temp. dir: " . $ae->error() . "\n";
 
     # get the name of the extracted distribution dir
 

@@ -130,6 +130,12 @@ package Maintainers;
 # that blead can be patched freely if it is in sync with the
 # latest release on CPAN.
 
+# BUGS is an email or url to post bug reports.  For modules with
+# UPSTREAM => 'blead', use perl5-porters@perl.org.  rt.cpan.org
+# appears to automatically provide a URL for CPAN modules; any value
+# given here overrides the default:
+# http://rt.cpan.org/Public/Dist/Display.html?Name=$ModuleName
+
 # DISTRIBUTION names the tarball on CPAN which (allegedly) the files
 # included in core are derived from. Note that the file's version may not
 # necessarily match the newest version on CPAN.
@@ -170,10 +176,11 @@ package Maintainers;
     'Archive::Extract' =>
 	{
 	'MAINTAINER'	=> 'kane',
-	'DISTRIBUTION'	=> 'KANE/Archive-Extract-0.32.tar.gz',
+	'DISTRIBUTION'	=> 'KANE/Archive-Extract-0.34.tar.gz',
 	'FILES'		=> q[lib/Archive/Extract.pm lib/Archive/Extract],
 	'CPAN'		=> 1,
 	'UPSTREAM'	=> 'cpan',
+	'BUGS'		=> 'bug-archive-extract@rt.cpan.org',
 	},
 
     'Archive::Tar' =>
@@ -183,6 +190,7 @@ package Maintainers;
 	'FILES'		=> q[lib/Archive/Tar.pm lib/Archive/Tar],
 	'CPAN'		=> 1,
 	'UPSTREAM'	=> 'cpan',
+	'BUGS'		=> 'bug-archive-tar@rt.cpan.org',
 	},
 
     'Attribute::Handlers' =>
@@ -197,7 +205,7 @@ package Maintainers;
     'autodie' =>
 	{
 	'MAINTAINER'	=> 'pjf',
-	'DISTRIBUTION'	=> 'PJF/autodie-1.999.tar.gz',
+	'DISTRIBUTION'	=> 'PJF/autodie-2.00.tar.gz',
 	'FILES' 	=> q[lib/Fatal.pm lib/autodie.pm lib/autodie],
 	'EXCLUDED'	=> [ qr{^inc/Module/},
 			     qw(
@@ -231,7 +239,7 @@ package Maintainers;
 	'MAINTAINER'	=> 'smccam',
 	'FILES'		=> q[ext/B/B/Concise.pm ext/B/t/concise.t],
 	'CPAN'		=> 0,
-	'UPSTREAM'	=> undef,
+	'UPSTREAM'	=> 'blead',
 	},
 
     'B::Debug' =>
@@ -245,6 +253,7 @@ package Maintainers;
 			   },
 	'CPAN'		=> 1,
 	'UPSTREAM'	=> undef,
+	'UPSTREAM'	=> 'blead',
 	},
 
     'B::Deparse' =>
@@ -275,11 +284,9 @@ package Maintainers;
     'base' =>
 	{
 	'MAINTAINER'	=> 'rgarcia',
-	'DISTRIBUTION'	=> 'RGARCIA/base-2.12.tar.gz',
+	'DISTRIBUTION'	=> 'RGARCIA/base-2.14.tar.gz',
 	'FILES'		=> q[lib/base.pm lib/fields.pm lib/base],
-	'EXCLUDED'	=> [ qw( t/Dummy.pm t/compile-time.t t/fields-5.6.0.t
-				t/fields-5.8.0.t t/lib/HasSigDie.pm )
-			   ],
+	'EXCLUDED'	=> [ qw( t/Dummy.pm ) ],
 	'CPAN'		=> 1,
 	'UPSTREAM'	=> "blead",
 	},
@@ -436,7 +443,7 @@ package Maintainers;
     'CPANPLUS' =>
 	{
 	'MAINTAINER'	=> 'kane',
-	'DISTRIBUTION'	=> 'KANE/CPANPLUS-0.87_02.tar.gz',
+	'DISTRIBUTION'	=> 'KANE/CPANPLUS-0.87_03.tar.gz',
 	'FILES'		=> q[lib/CPANPLUS.pm
 			     lib/CPANPLUS/Backend
 			     lib/CPANPLUS/Backend.pm
@@ -471,12 +478,13 @@ package Maintainers;
 			   ],
 	'CPAN'		=> 1,
 	'UPSTREAM'	=> 'cpan',
+	'BUGS'		=> 'bug-cpanplus@rt.cpan.org',
 	},
 
     'CPANPLUS::Dist::Build' =>
 	{
 	'MAINTAINER'	=> 'bingos',
-	'DISTRIBUTION'	=> 'BINGOS/CPANPLUS-Dist-Build-0.34.tar.gz',
+	'DISTRIBUTION'	=> 'BINGOS/CPANPLUS-Dist-Build-0.35_03.tar.gz',
 	'FILES'		=> q[lib/CPANPLUS/Dist/Build.pm
 			     lib/CPANPLUS/Dist/Build
 			    ],
@@ -600,11 +608,11 @@ package Maintainers;
     'ExtUtils::CBuilder' =>
 	{
 	'MAINTAINER'	=> 'kwilliams',
-	'DISTRIBUTION'	=> 'KWILLIAMS/ExtUtils-CBuilder-0.24.tar.gz',
+	'DISTRIBUTION'	=> 'DAGOLDEN/ExtUtils-CBuilder-0.26.tar.gz',
 	'FILES'		=> q[lib/ExtUtils/CBuilder.pm lib/ExtUtils/CBuilder],
-	'EXCLUDED'	=> [ qw{bleadcheck.pl}, ],
+	'EXCLUDED'	=> [ qw{devtools} ],
 	'CPAN'		=> 1,
-	'UPSTREAM'	=> undef,
+	'UPSTREAM'	=> 'cpan',
 	},
 
     'ExtUtils::Command' =>
@@ -723,13 +731,13 @@ package Maintainers;
     'ExtUtils::ParseXS' =>
 	{
 	'MAINTAINER'	=> 'kwilliams',
-	'DISTRIBUTION'	=> 'KWILLIAMS/ExtUtils-ParseXS-2.19.tar.gz',
+	'DISTRIBUTION'	=> 'DAGOLDEN/ExtUtils-ParseXS-2.19_04.tar.gz',
 	'FILES'		=> q[lib/ExtUtils/ParseXS.pm
 			     lib/ExtUtils/ParseXS
 			     lib/ExtUtils/xsubpp
 			    ],
 	'CPAN'		=> 1,
-	'UPSTREAM'	=> undef,
+	'UPSTREAM'	=> 'cpan',
 	},
 
     'faq' =>
@@ -743,7 +751,7 @@ package Maintainers;
     'File::Fetch' =>
 	{
 	'MAINTAINER'	=> 'kane',
-	'DISTRIBUTION'	=> 'KANE/File-Fetch-0.18.tar.gz',
+	'DISTRIBUTION'	=> 'KANE/File-Fetch-0.20.tar.gz',
 	'FILES'		=> q[lib/File/Fetch.pm lib/File/Fetch],
 	'CPAN'		=> 1,
 	'UPSTREAM'	=> 'cpan',
@@ -752,7 +760,7 @@ package Maintainers;
     'File::Path' =>
 	{
 	'MAINTAINER'	=> 'dland',
-	'DISTRIBUTION'	=> 'DLAND/File-Path-2.07.tar.gz',
+	'DISTRIBUTION'	=> 'DLAND/File-Path-2.07_03.tar.gz',
 	'FILES'		=> q[lib/File/Path.pm lib/File/Path.t],
 	'EXCLUDED'	=> [ qw{eg/setup-extra-tests
 				t/pod.t
@@ -769,7 +777,7 @@ package Maintainers;
     'File::Temp' =>
 	{
 	'MAINTAINER'	=> 'tjenness',
-	'DISTRIBUTION'	=> 'TJENNESS/File-Temp-0.21.tar.gz',
+	'DISTRIBUTION'	=> 'TJENNESS/File-Temp-0.22.tar.gz',
 	'FILES'		=> q[lib/File/Temp.pm lib/File/Temp],
 	'EXCLUDED'	=> [ qw{misc/benchmark.pl
 				misc/results.txt
@@ -915,7 +923,7 @@ package Maintainers;
     'IPC::Cmd' =>
 	{
 	'MAINTAINER'	=> 'kane',
-	'DISTRIBUTION'	=> 'KANE/IPC-Cmd-0.44.tar.gz',
+	'DISTRIBUTION'	=> 'KANE/IPC-Cmd-0.46.tar.gz',
 	'FILES'		=> q[lib/IPC/Cmd lib/IPC/Cmd.pm],
 	'CPAN'		=> 1,
 	'UPSTREAM'	=> 'cpan',
@@ -1170,7 +1178,7 @@ package Maintainers;
     'Module::Build' =>
 	{
 	'MAINTAINER'	=> 'kwilliams',
-	'DISTRIBUTION'	=> 'DAGOLDEN/Module-Build-0.33_02.tar.gz',
+	'DISTRIBUTION'	=> 'DAGOLDEN/Module-Build-0.33_05.tar.gz',
 	'FILES'		=> q[lib/Module/Build lib/Module/Build.pm],
 	'EXCLUDED'	=> [ qw{ t/par.t t/signature.t scripts/bundle.pl}, ],
 	'CPAN'		=> 1,
@@ -1552,7 +1560,7 @@ package Maintainers;
     'Safe' =>
 	{
 	'MAINTAINER'	=> 'rgarcia',
-	'DISTRIBUTION'	=> 'RGARCIA/Safe-2.16.tar.gz',
+	'DISTRIBUTION'	=> 'RGARCIA/Safe-2.17.tar.gz',
 	'FILES'		=> q[ext/Safe],
 	'CPAN'		=> 1,
 	'UPSTREAM'	=> "blead",
@@ -1561,7 +1569,7 @@ package Maintainers;
     'Scalar-List-Utils' =>
 	{
 	'MAINTAINER'	=> 'gbarr',
-	'DISTRIBUTION'	=> 'GBARR/Scalar-List-Utils-1.19.tar.gz',
+	'DISTRIBUTION'	=> 'GBARR/Scalar-List-Utils-1.21.tar.gz',
 	# Note that perl uses its own version of Makefile.PL
 	'FILES'		=> q[ext/List-Util],
 	'EXCLUDED'	=> [ qr{^inc/Module/},
@@ -1914,7 +1922,7 @@ package Maintainers;
     'Time::Piece' =>
 	{
 	'MAINTAINER'	=> 'msergeant',
-	'DISTRIBUTION'	=> 'MSERGEANT/Time-Piece-1.14.tar.gz',
+	'DISTRIBUTION'	=> 'MSERGEANT/Time-Piece-1.15.tar.gz',
 	'FILES'		=> q[ext/Time-Piece],
 	'CPAN'		=> 1,
 	'UPSTREAM'	=> undef,

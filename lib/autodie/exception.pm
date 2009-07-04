@@ -14,7 +14,7 @@ use overload
 
 use if ($] >= 5.010), overload => '~~'  => "matches";
 
-our $VERSION = '2.00';
+our $VERSION = '2.05';
 
 my $PACKAGE = __PACKAGE__;  # Useful to have a scalar for hash keys.
 
@@ -126,6 +126,31 @@ The line in C<< $E->file >> where the exceptional code was called.
 =cut
 
 sub line        { return $_[0]->{$PACKAGE}{line};  }
+
+=head3 context
+
+    my $context = $E->context;
+
+The context in which the subroutine was called.  This can be
+'list', 'scalar', or undefined (unknown).  It will never be 'void', as
+C<autodie> always captures the return value in one way or another.
+
+=cut
+
+sub context     { return $_[0]->{$PACKAGE}{context} }
+
+=head3 return
+
+    my $return_value = $E->return;
+
+The value(s) returned by the failed subroutine.  When the subroutine
+was called in a list context, this will always be a reference to an
+array containing the results.  When the subroutine was called in
+a scalar context, this will be the actual scalar returned.
+
+=cut
+
+sub return      { return $_[0]->{$PACKAGE}{return} }
 
 =head3 errno
 
@@ -392,8 +417,20 @@ sub _format_open {
             [^&]                # Not an ampersand (which means a dup)
         }x;
 
-        # Have a funny mode?  Use the default format.
-        return $this->format_default if not defined $mode;
+        if (not $mode) {
+            # Maybe it's a 2-arg open without any mode at all?
+            # Detect the most simple case for this, where our
+            # file consists only of word characters.
+
+            if ( $file =~ m{^\s*\w+\s*$} ) {
+                $mode = '<'
+            }
+            else {
+                # Otherwise, we've got no idea what's going on.
+                # Use the default.
+                return $this->format_default;
+            }
+        }
 
         # Localising $! means perl make make it a pretty error for us.
         local $! = $this->errno;
@@ -492,7 +529,7 @@ sub stringify {
         return $sub->($this) . $this->add_file_and_line;
     }
 
-    return $this->format_default;
+    return $this->format_default . $this->add_file_and_line;
 
 }
 
@@ -543,8 +580,7 @@ sub format_default {
 
     # Format our beautiful error.
 
-    return "Can't $call(".  join(q{, }, @args) . "): $!" .
-        $this->add_file_and_line;
+    return "Can't $call(".  join(q{, }, @args) . "): $!" ;
 
     # TODO - Handle user-defined errors from hash.
 
@@ -558,6 +594,8 @@ sub format_default {
         args => \@_,
         function => "CORE::open",
         errno => $!,
+        context => 'scalar',
+        return => undef,
     );
 
 
@@ -657,6 +695,9 @@ sub _init {
     $this->{$PACKAGE}{package} = $package;
 
     $this->{$PACKAGE}{errno}   = $args{errno} || 0;
+
+    $this->{$PACKAGE}{context} = $args{context};
+    $this->{$PACKAGE}{return}  = $args{return};
 
     $this->{$PACKAGE}{args}    = $args{args} || [];
     $this->{$PACKAGE}{function}= $args{function} or

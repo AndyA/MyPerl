@@ -205,7 +205,7 @@ package Maintainers;
     'autodie' =>
 	{
 	'MAINTAINER'	=> 'pjf',
-	'DISTRIBUTION'	=> 'PJF/autodie-2.00.tar.gz',
+	'DISTRIBUTION'	=> 'PJF/autodie-2.04.tar.gz',
 	'FILES' 	=> q[lib/Fatal.pm lib/autodie.pm lib/autodie],
 	'EXCLUDED'	=> [ qr{^inc/Module/},
 			     qw(
@@ -395,7 +395,7 @@ package Maintainers;
     'CPAN' =>
 	{
 	'MAINTAINER'	=> 'andk',
-	'DISTRIBUTION'	=> 'ANDK/CPAN-1.94.tar.gz',
+	'DISTRIBUTION'	=> 'ANDK/CPAN-1.9402.tar.gz',
 	'FILES'		=> q[lib/CPAN.pm lib/CPAN],
 	'EXCLUDED'	=> [ qr{^distroprefs/},
 			     qr{^inc/Test/},
@@ -484,7 +484,7 @@ package Maintainers;
     'CPANPLUS::Dist::Build' =>
 	{
 	'MAINTAINER'	=> 'bingos',
-	'DISTRIBUTION'	=> 'BINGOS/CPANPLUS-Dist-Build-0.35_03.tar.gz',
+	'DISTRIBUTION'	=> 'BINGOS/CPANPLUS-Dist-Build-0.36.tar.gz',
 	'FILES'		=> q[lib/CPANPLUS/Dist/Build.pm
 			     lib/CPANPLUS/Dist/Build
 			    ],
@@ -608,7 +608,7 @@ package Maintainers;
     'ExtUtils::CBuilder' =>
 	{
 	'MAINTAINER'	=> 'kwilliams',
-	'DISTRIBUTION'	=> 'DAGOLDEN/ExtUtils-CBuilder-0.26.tar.gz',
+	'DISTRIBUTION'	=> 'DAGOLDEN/ExtUtils-CBuilder-0.2601.tar.gz',
 	'FILES'		=> q[lib/ExtUtils/CBuilder.pm lib/ExtUtils/CBuilder],
 	'EXCLUDED'	=> [ qw{devtools} ],
 	'CPAN'		=> 1,
@@ -731,7 +731,7 @@ package Maintainers;
     'ExtUtils::ParseXS' =>
 	{
 	'MAINTAINER'	=> 'kwilliams',
-	'DISTRIBUTION'	=> 'DAGOLDEN/ExtUtils-ParseXS-2.19_04.tar.gz',
+	'DISTRIBUTION'	=> 'DAGOLDEN/ExtUtils-ParseXS-2.20.tar.gz',
 	'FILES'		=> q[lib/ExtUtils/ParseXS.pm
 			     lib/ExtUtils/ParseXS
 			     lib/ExtUtils/xsubpp
@@ -867,7 +867,7 @@ package Maintainers;
 	'MAINTAINER'	=> 'p5p',
 	'DISTRIBUTION'	=> 'SBURKE/I18N-LangTags-0.35.tar.gz',
 	'FILES'		=> q[lib/I18N/LangTags.pm lib/I18N/LangTags],
-	'CPAN'		=> 1,
+	'CPAN'		=> 0,
 	'UPSTREAM'	=> 'blead',
 	},
 

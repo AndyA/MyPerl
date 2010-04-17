@@ -6,9 +6,10 @@ BEGIN {
 	    print "1..0 # Skip: PerlIO not used\n";
 	    exit 0;
 	}
+	require './test.pl';
 }
 
-use Test::More tests => 39;
+plan tests => 42;
 
 use_ok('PerlIO');
 
@@ -92,22 +93,49 @@ ok(close($utffh));
     close OLDOUT;
 
     SKIP: {
-      skip("TMPDIR not honored on this platform", 2)
+      skip("TMPDIR not honored on this platform", 4)
         if !$Config{d_mkstemp}
         || $^O eq 'VMS' || $^O eq 'MSwin32' || $^O eq 'os2';
       local $ENV{TMPDIR} = $nonexistent;
+
+      # hardcoded default temp path
+      my $perlio_tmp_file_glob = '/tmp/PerlIO_??????';
+
       ok( open(my $x,"+<",undef), 'TMPDIR honored by magic temp file via 3 arg open with undef - works if TMPDIR points to a non-existent dir');
+
+      my $filename = find_filename($x, $perlio_tmp_file_glob);
+      is($filename, undef, "No tmp files leaked");
+      unlink $filename if defined $filename;
 
       mkdir $ENV{TMPDIR};
       ok(open(my $x,"+<",undef), 'TMPDIR honored by magic temp file via 3 arg open with undef - works if TMPDIR points to an existent dir');
+
+      $filename = find_filename($x, $perlio_tmp_file_glob);
+      is($filename, undef, "No tmp files leaked");
+      unlink $filename if defined $filename;
     }
+}
+
+sub find_filename {
+    my ($fh, @globs) = @_;
+    my ($dev, $inode) = stat $fh;
+    die "Can't stat $fh: $!" unless defined $dev;
+
+    foreach (@globs) {
+	foreach my $file (glob $_) {
+	    my ($this_dev, $this_inode) = stat $file;
+	    next unless defined $this_dev;
+	    return $file if $this_dev == $dev && $this_inode == $inode;
+	}
+    }
+    return;
 }
 
 # in-memory open
 SKIP: {
     eval { require PerlIO::scalar };
     unless (find PerlIO::Layer 'scalar') {
-	skip("PerlIO::scalar not found", 8);
+	skip("PerlIO::scalar not found", 9);
     }
     my $var;
     ok( open(my $x,"+<",\$var), 'magic in-memory file via 3 arg open with \\$var');
@@ -141,6 +169,31 @@ SKIP: {
         ok( open(STDERR,">",\$var), '       open STDERR into in-memory var');
         open STDERR,  ">&OLDERR" or die "cannot dup OLDERR: $!";
     }
+
+
+{ local $TODO = 'fails well back into 5.8.x';
+
+	
+sub read_fh_and_return_final_rv {
+	my ($fh) = @_;
+	my $buf = '';
+	my $rv;
+	for (1..3) {
+		$rv = read($fh, $buf, 1, length($buf));
+		next if $rv;
+	}
+	return $rv
+}
+
+open(my $no_perlio, '<', \'ab') or die; 
+open(my $perlio, '<:crlf', \'ab') or die; 
+
+is(read_fh_and_return_final_rv($perlio), read_fh_and_return_final_rv($no_perlio), "RT#69332 - perlio should return the same value as nonperlio after EOF");
+
+close ($perlio);
+close ($no_perlio);
+}
+
 }
 
 

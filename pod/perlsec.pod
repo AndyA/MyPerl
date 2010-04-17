@@ -12,6 +12,18 @@ with fewer hidden snags.  Additionally, because the language has more
 builtin functionality, it can rely less upon external (and possibly
 untrustworthy) programs to accomplish its purposes.
 
+=head1 SECURITY VULNERABILITY CONTACT INFORMATION
+
+If you believe you have found a security vulnerability in Perl, please email
+perl5-security-report@perl.org with details.  This points to a closed
+subscription, unarchived mailing list.  Please only use this address for
+security issues in the Perl core, not for modules independently distributed on
+CPAN.
+
+=head1 SECURITY MECHANISMS AND CONCERNS
+
+=head2 Taint mode
+
 Perl automatically enables a set of special security checks, called I<taint
 mode>, when it detects its program running with differing real and effective
 user or group IDs.  The setuid bit in Unix permissions is mode 04000, the
@@ -334,10 +346,15 @@ programs launched on someone else's behalf, like CGI programs.
 This is quite different, however, from not even trusting the writer of the
 code not to try to do something evil.  That's the kind of trust needed
 when someone hands you a program you've never seen before and says, "Here,
-run this."  For that kind of safety, check out the Safe module,
-included standard in the Perl distribution.  This module allows the
+run this."  For that kind of safety, you might want to check out the Safe
+module, included standard in the Perl distribution.  This module allows the
 programmer to set up special compartments in which all system operations
-are trapped and namespace access is carefully controlled.
+are trapped and namespace access is carefully controlled.  Safe should
+not be considered bullet-proof, though: it will not prevent the foreign
+code to set up infinite loops, allocate gigabytes of memory, or even
+abusing perl bugs to make the host interpreter crash or behave in
+unpredictable ways. In any case it's better avoided completely if you're
+really concerned about security.
 
 =head2 Security Bugs
 

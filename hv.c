@@ -1346,6 +1346,7 @@ Perl_hv_ksplit(pTHX_ HV *hv, IV newmax)
 HV *
 Perl_newHVhv(pTHX_ HV *ohv)
 {
+    dVAR;
     HV * const hv = newHV();
     STRLEN hv_max, hv_fill;
 
@@ -1379,8 +1380,9 @@ Perl_newHVhv(pTHX_ HV *ohv)
 		const STRLEN len = HeKLEN(oent);
 		const int flags  = HeKFLAGS(oent);
 		HE * const ent   = new_HE();
+		SV *const val    = HeVAL(oent);
 
-		HeVAL(ent)     = newSVsv(HeVAL(oent));
+		HeVAL(ent) = SvIMMORTAL(val) ? val : newSVsv(val);
 		HeKEY_hek(ent)
                     = shared ? share_hek_flags(key, len, hash, flags)
                              :  save_hek_flags(key, len, hash, flags);
@@ -1411,9 +1413,10 @@ Perl_newHVhv(pTHX_ HV *ohv)
 
 	hv_iterinit(ohv);
 	while ((entry = hv_iternext_flags(ohv, 0))) {
+	    SV *const val = HeVAL(entry);
 	    (void)hv_store_flags(hv, HeKEY(entry), HeKLEN(entry),
-			         newSVsv(HeVAL(entry)), HeHASH(entry),
-			         HeKFLAGS(entry));
+			         SvIMMORTAL(val) ? val : newSVsv(val),
+				 HeHASH(entry), HeKFLAGS(entry));
 	}
 	HvRITER_set(ohv, riter);
 	HvEITER_set(ohv, eiter);
@@ -2147,8 +2150,7 @@ Perl_hv_iternext_flags(pTHX_ HV *hv, I32 flags)
                 HeSVKEY_set(entry, SvREFCNT_inc_simple_NN(key));
                 return entry;               /* beware, hent_val is not set */
             }
-            if (HeVAL(entry))
-                SvREFCNT_dec(HeVAL(entry));
+            SvREFCNT_dec(HeVAL(entry));
             Safefree(HeKEY_hek(entry));
             del_HE(entry);
             iter->xhv_eiter = NULL; /* HvEITER(hv) = NULL */
@@ -2434,12 +2436,12 @@ S_unshare_hek_or_pvn(pTHX_ const HEK *hek, const char *str, I32 len, U32 hash)
         }
     }
 
-    if (!entry && ckWARN_d(WARN_INTERNAL))
-	Perl_warner(aTHX_ packWARN(WARN_INTERNAL),
-                    "Attempt to free non-existent shared string '%s'%s"
-                    pTHX__FORMAT,
-                    hek ? HEK_KEY(hek) : str,
-                    ((k_flags & HVhek_UTF8) ? " (utf8)" : "") pTHX__VALUE);
+    if (!entry)
+	Perl_ck_warner_d(aTHX_ packWARN(WARN_INTERNAL),
+			 "Attempt to free non-existent shared string '%s'%s"
+			 pTHX__FORMAT,
+			 hek ? HEK_KEY(hek) : str,
+			 ((k_flags & HVhek_UTF8) ? " (utf8)" : "") pTHX__VALUE);
     if (k_flags & HVhek_FREEKEY)
 	Safefree(str);
 }
@@ -2970,6 +2972,8 @@ Perl_refcounted_he_free(pTHX_ struct refcounted_he *he) {
     }
 }
 
+/* pp_entereval is aware that labels are stored with a key ':' at the top of
+   the linked list.  */
 const char *
 Perl_fetch_cop_label(pTHX_ struct refcounted_he *const chain, STRLEN *len,
 		     U32 *flags) {

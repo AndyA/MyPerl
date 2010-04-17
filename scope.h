@@ -57,7 +57,9 @@
 #define SAVEt_ADELETE		46
 
 #define SAVEf_SETMAGIC		1
+#define SAVEf_KEEPOLDELEM	2
 
+#define save_aelem(av,idx,sptr)	save_aelem_flags(av,idx,sptr,SAVEf_SETMAGIC)
 #define save_helem(hv,key,sptr)	save_helem_flags(hv,key,sptr,SAVEf_SETMAGIC)
 
 #ifndef SCOPE_SAVES_SIGNAL_MASK
@@ -98,6 +100,20 @@ Opening bracket on a callback.  See C<LEAVE> and L<perlcall>.
 =for apidoc Ams||LEAVE
 Closing bracket on a callback.  See C<ENTER> and L<perlcall>.
 
+=over
+
+=item ENTER_with_name(name)
+
+Same as C<ENTER>, but when debugging is enabled it also associates the
+given literal string with the new scope.
+
+=item LEAVE_with_name(name)
+
+Same as C<LEAVE>, but when debugging is enabled it first checks that the
+scope has the given name. Name must be a literal string.
+
+=back
+
 =cut
 */
 
@@ -115,9 +131,28 @@ Closing bracket on a callback.  See C<ENTER> and L<perlcall>.
 	DEBUG_SCOPE("LEAVE")					\
 	pop_scope();						\
     } STMT_END
+#define ENTER_with_name(name)						\
+    STMT_START {							\
+	push_scope();							\
+	if (PL_scopestack_name)						\
+	    PL_scopestack_name[PL_scopestack_ix-1] = name;		\
+	DEBUG_SCOPE("ENTER \"" name "\"")				\
+    } STMT_END
+#define LEAVE_with_name(name)						\
+    STMT_START {							\
+	DEBUG_SCOPE("LEAVE \"" name "\"")				\
+	if (PL_scopestack_name)	{					\
+	    assert(((char*)PL_scopestack_name[PL_scopestack_ix-1]	\
+			== (char*)name)					\
+		    || strEQ(PL_scopestack_name[PL_scopestack_ix-1], name));        \
+	}								\
+	pop_scope();							\
+    } STMT_END
 #else
 #define ENTER push_scope()
 #define LEAVE pop_scope()
+#define ENTER_with_name(name) ENTER
+#define LEAVE_with_name(name) LEAVE
 #endif
 #define LEAVE_SCOPE(old) if (PL_savestack_ix > old) leave_scope(old)
 
@@ -143,6 +178,8 @@ Closing bracket on a callback.  See C<ENTER> and L<perlcall>.
 #define SAVESETSVFLAGS(sv,mask,val)	save_set_svflags(sv,mask,val)
 #define SAVEDELETE(h,k,l) \
 	  save_delete(MUTABLE_HV(h), (char*)(k), (I32)(l))
+#define SAVEHDELETE(h,s) \
+	  save_hdelete(MUTABLE_HV(h), (s))
 #define SAVEADELETE(a,k) \
 	  save_adelete(MUTABLE_AV(a), (I32)(k))
 #define SAVEDESTRUCTOR(f,p) \

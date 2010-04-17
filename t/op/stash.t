@@ -10,9 +10,9 @@ BEGIN { require "./test.pl"; }
 plan( tests => 31 );
 
 # Used to segfault (bug #15479)
-fresh_perl_is(
+fresh_perl_like(
     '%:: = ""',
-    'Odd number of elements in hash assignment at - line 1.',
+    qr/Odd number of elements in hash assignment at - line 1\./,
     { switches => [ '-w' ] },
     'delete $::{STDERR} and print a warning',
 );
@@ -25,14 +25,17 @@ fresh_perl_is(
     q(Insert a non-GV in a stash, under warnings 'once'),
 );
 
-ok( !defined %oedipa::maas::, q(stashes aren't defined if not used) );
-ok( !defined %{"oedipa::maas::"}, q(- work with hard refs too) );
+{
+    no warnings 'deprecated';
+    ok( !defined %oedipa::maas::, q(stashes aren't defined if not used) );
+    ok( !defined %{"oedipa::maas::"}, q(- work with hard refs too) );
 
-ok( defined %tyrone::slothrop::, q(stashes are defined if seen at compile time) );
-ok( defined %{"tyrone::slothrop::"}, q(- work with hard refs too) );
+    ok( defined %tyrone::slothrop::, q(stashes are defined if seen at compile time) );
+    ok( defined %{"tyrone::slothrop::"}, q(- work with hard refs too) );
 
-ok( defined %bongo::shaftsbury::, q(stashes are defined if a var is seen at compile time) );
-ok( defined %{"bongo::shaftsbury::"}, q(- work with hard refs too) );
+    ok( defined %bongo::shaftsbury::, q(stashes are defined if a var is seen at compile time) );
+    ok( defined %{"bongo::shaftsbury::"}, q(- work with hard refs too) );
+}
 
 package tyrone::slothrop;
 $bongo::shaftsbury::scalar = 1;
@@ -53,19 +56,20 @@ package main;
 
 # now tests in eval
 
-ok( !eval  { defined %achtfaden:: },   'works in eval{}' );
-ok( !eval q{ defined %schoenmaker:: }, 'works in eval("")' );
+ok( !eval  { no warnings 'deprecated'; defined %achtfaden:: },   'works in eval{}' );
+ok( !eval q{ no warnings 'deprecated'; defined %schoenmaker:: }, 'works in eval("")' );
 
 # now tests with strictures
 
 {
     use strict;
+    no warnings 'deprecated';
     ok( !defined %pig::, q(referencing a non-existent stash doesn't produce stricture errors) );
     ok( !exists $pig::{bodine}, q(referencing a non-existent stash element doesn't produce stricture errors) );
 }
 
 SKIP: {
-    eval { require B; 1 } or skip "no B", 12;
+    eval { require B; 1 } or skip "no B", 18;
 
     *b = \&B::svref_2object;
     my $CVf_ANON = B::CVf_ANON();

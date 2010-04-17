@@ -100,6 +100,8 @@ like($@, qr/Invalid version object/,
 sub BaseTests {
 
     my ($CLASS, $method, $qv_declare) = @_;
+    my $warning;
+    local $SIG{__WARN__} = sub { $warning = $_[0] };
     
     # Insert your test code below, the Test module is use()ed here so read
     # its man page ( perldoc Test ) for help writing this test script.
@@ -124,50 +126,38 @@ sub BaseTests {
     is ( "$version" , "5.005" , '5.005 eq "5.005"' );
     $version = $CLASS->$method("5.006.001");
     is ( "$version" , "5.006.001" , '5.006.001 eq v5.6.1' );
-    $version = $CLASS->$method("1.2.3_4");
-    is ( "$version" , "1.2.3_4" , 'alpha version 1.2.3_4 eq v1.2.3_4' );
+    unlike ($warning, qr/v-string without leading 'v' deprecated/, 'No leading v');
+    $version = $CLASS->$method("v1.2.3_4");
+    is ( "$version" , "v1.2.3_4" , 'alpha version 1.2.3_4 eq v1.2.3_4' );
     
     # test illegal formats
     diag "test illegal formats" unless $ENV{PERL_CORE};
-    eval {my $version = $CLASS->$method("1.2_3_4")};
+    eval {$version = $CLASS->$method("1.2_3_4")};
     like($@, qr/multiple underscores/,
 	"Invalid version format (multiple underscores)");
     
-    eval {my $version = $CLASS->$method("1.2_3.4")};
+    eval {$version = $CLASS->$method("1.2_3.4")};
     like($@, qr/underscores before decimal/,
 	"Invalid version format (underscores before decimal)");
     
-    eval {my $version = $CLASS->$method("1_2")};
+    eval {$version = $CLASS->$method("1_2")};
     like($@, qr/alpha without decimal/,
 	"Invalid version format (alpha without decimal)");
     
-    # for this first test, just upgrade the warn() to die()
-    eval {
-	local $SIG{__WARN__} = sub { die $_[0] };
-	$version = $CLASS->$method("1.2b3");
-    };
-    my $warnregex = "Version string '.+' contains invalid data; ".
-	    "ignoring: '.+'";
-
-    like($@, qr/$warnregex/,
-	"Version string contains invalid data; ignoring");
+    eval { $version = $CLASS->$method("1.2b3")};
+    like($@, qr/non-numeric data/,
+	"Invalid version format (non-numeric data)");
 
     # from here on out capture the warning and test independently
     {
-    my $warning;
-    local $SIG{__WARN__} = sub { $warning = $_[0] };
-    $version = $CLASS->$method("99 and 44/100 pure");
+    eval{$version = $CLASS->$method("99 and 44/100 pure")};
 
-    like($warning, qr/$warnregex/,
-	"Version string contains invalid data; ignoring");
-    is ("$version", "99", '$version eq "99"');
-    ok ($version->numify == 99.0, '$version->numify == 99.0');
-    ok ($version->normal eq "v99.0.0", '$version->normal eq v99.0.0');
+    like($@, qr/non-numeric data/,
+	"Invalid version format (non-numeric data)");
     
-    $version = $CLASS->$method("something");
-    like($warning, qr/$warnregex/,
-	"Version string contains invalid data; ignoring");
-    ok (defined $version, 'defined $version');
+    eval{$version = $CLASS->$method("something")};
+    like($@, qr/non-numeric data/,
+	"Invalid version format (non-numeric data)");
     
     # reset the test object to something reasonable
     $version = $CLASS->$method("1.2.3");
@@ -227,7 +217,7 @@ sub BaseTests {
     
     $version = $CLASS->$method("1.2.4");
     diag "numeric tests with alpha-style non-objects"
-	if $Verbose;
+	unless $ENV{PERL_CORE};
     ok ( $version > $new_version, '$version > $new_version' );
     ok ( $new_version < $version, '$new_version < $version' );
     ok ( $version != $new_version, '$version != $new_version' );
@@ -251,7 +241,7 @@ sub BaseTests {
     $version = $CLASS->$method("1.2.3.4");
     $new_version = $CLASS->$method("1.2.3_4");
     diag "tests with alpha-style objects with same subversion"
-	if $Verbose;
+	unless $ENV{PERL_CORE};
     ok ( $version > $new_version, '$version > $new_version' );
     ok ( $new_version < $version, '$new_version < $version' );
     ok ( $version != $new_version, '$version != $new_version' );
@@ -556,9 +546,8 @@ SKIP: {
 	local $SIG{__WARN__} = sub { $warning = $_[0] };
 
 $DB::single = 1;
-	my $v = $CLASS->$method('1,7');
-	unlike($warning, qr"Version string '1,7' contains invalid data",
-	    'Directly test comma as decimal compliance');
+	my $v = eval { $CLASS->$method('1,7') };
+#	is( $@, "", 'Directly test comma as decimal compliance');
 
 	my $ver = 1.23;  # has to be floating point number
 	my $orig_loc = setlocale( LC_ALL );

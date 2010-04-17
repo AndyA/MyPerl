@@ -408,3 +408,27 @@ system(FOO . "\n");
 EXPECT
 Bareword "FOO" not allowed while "strict subs" in use at - line 4.
 Execution of - aborted due to compilation errors.
+########
+use strict 'subs';
+my @players;
+eval { @players = sort(_rankCompare @players) };
+sub _rankCompare2 { }
+@players = sort(_rankCompare2 @players);
+EXPECT
+
+########
+use strict;
+readline(FOO);
+EXPECT
+
+########
+use strict 'subs';
+sub sayfoo { print "foo:@_\n" ; "ret\n" }
+print sayfoo "bar";
+print sayfoo . "bar\n";
+EXPECT
+foo:bar
+ret
+foo:
+ret
+bar

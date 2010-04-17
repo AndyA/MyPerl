@@ -26,6 +26,7 @@ Makefile.old
 /perlmain.c
 /perlmini.c
 /pod/Makefile
+/runtests
 /writemain
 /x2p/Makefile
 /x2p/cflags
@@ -41,6 +42,7 @@ Makefile.old
 # general build products
 *.o
 *.a
+*.so
 
 # general build products (Win32)
 *.def
@@ -74,7 +76,7 @@ ext.libs
 /uudmap.h
 /bitcount.h
 
-ext/Win32API-File/cFile_pc_to_blib
+lib/inc/
 lib/Win32.pm
 lib/Win32API/
 lib/Win32CORE.pm
@@ -94,6 +96,17 @@ t/tmp*
 t/perl
 t/test_state
 *.output
+
+# t/op/require.t byproducts
+t/bleah.pm
+t/bleah.do
+t/bleah.flg
+t/urkkk.pm
+t/urkkk.pmc
+t/krunch.pm
+t/krunch.pmc
+t/whap.pm
+t/whap.pmc
 
 # make_ext.pl cleanup scripts
 realclean.sh

@@ -17,7 +17,7 @@ use Config;
 use File::Spec::Functions;
 
 BEGIN { require './test.pl'; }
-plan tests => 301;
+plan tests => 325;
 
 $| = 1;
 
@@ -42,7 +42,6 @@ BEGIN {
   }
 }
 
-my $Is_MacOS    = $^O eq 'MacOS';
 my $Is_VMS      = $^O eq 'VMS';
 my $Is_MSWin32  = $^O eq 'MSWin32';
 my $Is_NetWare  = $^O eq 'NetWare';
@@ -51,8 +50,7 @@ my $Is_Cygwin   = $^O eq 'cygwin';
 my $Is_OpenBSD  = $^O eq 'openbsd';
 my $Invoke_Perl = $Is_VMS      ? 'MCR Sys$Disk:[]Perl.exe' :
                   $Is_MSWin32  ? '.\perl'               :
-                  $Is_MacOS    ? ':perl'                :
-                  $Is_NetWare  ? 'perl'                 : 
+                  $Is_NetWare  ? 'perl'                 :
                                  './perl'               ;
 my @MoreEnv = qw/IFS CDPATH ENV BASH_ENV/;
 
@@ -134,7 +132,7 @@ sub test ($;$) {
 }
 
 # We need an external program to call.
-my $ECHO = ($Is_MSWin32 ? ".\\echo$$" : $Is_MacOS ? ":echo$$" : ($Is_NetWare ? "echo$$" : "./echo$$"));
+my $ECHO = ($Is_MSWin32 ? ".\\echo$$" : ($Is_NetWare ? "echo$$" : "./echo$$"));
 END { unlink $ECHO }
 open PROG, "> $ECHO" or die "Can't create $ECHO: $!";
 print PROG 'print "@ARGV\n"', "\n";
@@ -173,7 +171,7 @@ my $TEST = catfile(curdir(), 'TEST');
 
     SKIP: {
         skip "Environment tainting tests skipped", 4
-          if $Is_MSWin32 || $Is_NetWare || $Is_VMS || $Is_Dos || $Is_MacOS;
+          if $Is_MSWin32 || $Is_NetWare || $Is_VMS || $Is_Dos;
 
 	my @vars = ('PATH', @MoreEnv);
 	while (my $v = $vars[0]) {
@@ -430,8 +428,7 @@ SKIP: {
     # just because Errno possibly failing.
     test eval('$!{ENOENT}') ||
 	$! == 2 || # File not found
-	($Is_Dos && $! == 22) ||
-	($^O eq 'mint' && $! == 33);
+	($Is_Dos && $! == 22);
 
     test !eval { open FOO, "> $foo" }, 'open for write';
     test $@ =~ /^Insecure dependency/, $@;
@@ -628,7 +625,6 @@ SKIP: {
 	unlink($symlink);
 	my $sl = "/something/naughty";
 	# it has to be a real path on Mac OS
-	$sl = MacPerl::MakePath((MacPerl::Volumes())[0]) if $Is_MacOS;
 	symlink($sl, $symlink) or die "symlink: $!\n";
 	my $readlink = readlink($symlink);
 	test tainted $readlink;
@@ -973,15 +969,11 @@ TODO: {
     };
     test !$@;
 
-    SKIP: {
-        skip "no exec() on MacOS Classic" if $Is_MacOS;
-
-	eval { 
-            no warnings;
-            exec("lskdfj does not exist","with","args"); 
-        };
-	test !$@;
-    }
+    eval {
+	no warnings;
+	exec("lskdfj does not exist","with","args"); 
+    };
+    test !$@;
 
     # If you add tests here update also the above skip block for VMS.
 }
@@ -1136,13 +1128,19 @@ TERNARY_CONDITIONALS: {
 
 {
     my @a;
-    local $::TODO = 1;
-    $a[0] = $^X;
-    my $i = 0;
-    while($a[0]=~ m/(.)/g ) {
-	last if $i++ > 10000;
-    }
-    cmp_ok $i, '<', 10000, "infinite m//g";
+    $a[0] = $^X . '-';
+    $a[0]=~ m/(.)/g;
+    cmp_ok pos($a[0]), '>', 0, "infinite m//g on arrays (aelemfast)";
+
+    my $i = 1;
+    $a[$i] = $^X . '-';
+    $a[$i]=~ m/(.)/g;
+    cmp_ok pos($a[$i]), '>', 0, "infinite m//g on arrays (aelem)";
+
+    my %h;
+    $h{a} = $^X . '-';
+    $h{a}=~ m/(.)/g;
+    cmp_ok pos($h{a}), '>', 0, "infinite m//g on hashes (helem)";
 }
 
 SKIP:
@@ -1315,6 +1313,89 @@ foreach my $ord (78, 163, 256) {
     my $zz = pack "a*a*", q{print "Hello world\n"}, $TAINT;
     ok(tainted($zz), "pack a*a* preserves tainting");
 }
+
+# Bug RT #61976 tainted $! would show numeric rather than string value
+
+{
+    my $tainted_path = substr($^X,0,0) . "/no/such/file";
+    my $err;
+    # $! is used in a tainted expression, so gets tainted
+    open my $fh, $tainted_path or $err= "$!";
+    unlike($err, qr/^\d+$/, 'tainted $!');
+}
+
+{
+    # #6758: tainted values become untainted in tied hashes
+    #         (also applies to other value magic such as pos)
+
+
+    package P6758;
+
+    sub TIEHASH { bless {} }
+    sub TIEARRAY { bless {} }
+
+    my $i = 0;
+
+    sub STORE {
+	main::ok(main::tainted($_[1]), "tied arg1 tainted");
+	main::ok(main::tainted($_[2]), "tied arg2 tainted");
+        $i++;
+    }
+
+    package main;
+
+    my ($k,$v) = qw(1111 val);
+    taint_these($k,$v);
+    tie my @array, 'P6758';
+    tie my %hash , 'P6758';
+    $array[$k] = $v;
+    $hash{$k} = $v;
+    ok $i == 2, "tied STORE called correct number of times";
+}
+
+# Bug RT #45167 the return value of sprintf sometimes wasn't tainted
+# when the args were tainted. This only occured on the first use of
+# sprintf; after that, its TARG has taint magic attached, so setmagic
+# at the end works.  That's why there are multiple sprintf's below, rather
+# than just one wrapped in an inner loop. Also, any plantext betwerrn
+# fprmat entires would correctly cause tainting to get set. so test with
+# "%s%s" rather than eg "%s %s".
+
+{
+    for my $var1 ($TAINT, "123") {
+	for my $var2 ($TAINT0, "456") {
+	    my @s;
+	    push @s, sprintf '%s', $var1, $var2;
+	    push @s, sprintf ' %s', $var1, $var2;
+	    push @s, sprintf '%s%s', $var1, $var2;
+	    for (0..2) {
+		ok( !(
+			tainted($s[$_]) xor
+			(tainted($var1) || ($_==2 && tainted($var2)))
+		    ),
+		    "sprintf fmt$_, '$var1', '$var2'");
+	    }
+	}
+    }
+}
+
+
+# Bug RT #67962: old tainted $1 gets treated as tainted
+# in next untainted # match
+
+{
+    use re 'taint';
+    "abc".$TAINT =~ /(.*)/; # make $1 tainted
+    ok(tainted($1), '$1 should be tainted');
+
+    my $untainted = "abcdef";
+    ok(!tainted($untainted), '$untainted should be untainted');
+    $untainted =~ s/(abc)/$1/;
+    ok(!tainted($untainted), '$untainted should still be untainted');
+    $untainted =~ s/(abc)/x$1/;
+    ok(!tainted($untainted), '$untainted should yet still be untainted');
+}
+
 
 # This may bomb out with the alarm signal so keep it last
 SKIP: {

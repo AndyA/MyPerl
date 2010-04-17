@@ -14,7 +14,7 @@ BEGIN {
 
 use warnings;
 
-plan 84;
+plan 92;
 
 $SIG{__WARN__} = sub { die @_ };
 
@@ -114,16 +114,21 @@ eval 'package A; sub PS : lvalue';
 @attrs = eval 'attributes::get \&A::PS';
 is "@attrs", "lvalue";
 
-# Test ability to modify existing sub's (or XSUB's) attributes.
-eval 'package A; sub X { $_[0] } sub X : lvalue';
-@attrs = eval 'attributes::get \&A::X';
+# Test attributes on predeclared subroutines, after definition
+eval 'package A; sub PS : lvalue; sub PS { }';
+@attrs = eval 'attributes::get \&A::PS';
 is "@attrs", "lvalue";
+
+# Test ability to modify existing sub's (or XSUB's) attributes.
+eval 'package A; sub X { $_[0] } sub X : method';
+@attrs = eval 'attributes::get \&A::X';
+is "@attrs", "method";
 
 # Above not with just 'pure' built-in attributes.
 sub Z::MODIFY_CODE_ATTRIBUTES { (); }
-eval 'package Z; sub L { $_[0] } sub L : Z lvalue';
+eval 'package Z; sub L { $_[0] } sub L : Z method';
 @attrs = eval 'attributes::get \&Z::L';
-is "@attrs", "lvalue Z";
+is "@attrs", "method Z";
 
 # Begin testing attributes that tie
 
@@ -196,3 +201,45 @@ sub PVBM () { 'foo' }
 
 ok !defined(attributes::get(\PVBM)), 
     'PVBMs don\'t segfault attributes::get';
+
+{
+    #  [perl #49472] Attributes + Unkown Error
+    eval '
+	use strict;
+	sub MODIFY_CODE_ATTRIBUTE{}
+	sub f:Blah {$nosuchvar};
+    ';
+
+    my $err = $@;
+    like ($err, qr/Global symbol "\$nosuchvar" requires /, 'perl #49472');
+}
+
+# Test that code attributes always get applied to the same CV that
+# we're left with at the end (bug#66970).
+{
+	package bug66970;
+	our $c;
+	sub MODIFY_CODE_ATTRIBUTES { $c = $_[1]; () }
+	$c=undef; eval 'sub t0 :Foo';
+	main::ok $c == \&{"t0"};
+	$c=undef; eval 'sub t1 :Foo { }';
+	main::ok $c == \&{"t1"};
+	$c=undef; eval 'sub t2';
+	our $t2a = \&{"t2"};
+	$c=undef; eval 'sub t2 :Foo';
+	main::ok $c == \&{"t2"} && $c == $t2a;
+	$c=undef; eval 'sub t3';
+	our $t3a = \&{"t3"};
+	$c=undef; eval 'sub t3 :Foo { }';
+	main::ok $c == \&{"t3"} && $c == $t3a;
+	$c=undef; eval 'sub t4 :Foo';
+	our $t4a = \&{"t4"};
+	our $t4b = $c;
+	$c=undef; eval 'sub t4 :Foo';
+	main::ok $c == \&{"t4"} && $c == $t4b && $c == $t4a;
+	$c=undef; eval 'sub t5 :Foo';
+	our $t5a = \&{"t5"};
+	our $t5b = $c;
+	$c=undef; eval 'sub t5 :Foo { }';
+	main::ok $c == \&{"t5"} && $c == $t5b && $c == $t5a;
+}

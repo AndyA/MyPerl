@@ -172,8 +172,10 @@ Perl_sv_does(pTHX_ SV *sv, const char *const name)
     SvGETMAGIC(sv);
 
     if (!SvOK(sv) || !(SvROK(sv) || (SvPOK(sv) && SvCUR(sv))
-		|| (SvGMAGICAL(sv) && SvPOKp(sv) && SvCUR(sv))))
+	    || (SvGMAGICAL(sv) && SvPOKp(sv) && SvCUR(sv)))) {
+	LEAVE;
 	return FALSE;
+    }
 
     if (sv_isobject(sv)) {
 	classname = sv_reftype(SvRV(sv),TRUE);
@@ -181,8 +183,10 @@ Perl_sv_does(pTHX_ SV *sv, const char *const name)
 	classname = SvPV_nolen(sv);
     }
 
-    if (strEQ(name,classname))
+    if (strEQ(name,classname)) {
+	LEAVE;
 	return TRUE;
+    }
 
     PUSHMARK(SP);
     XPUSHs(sv);
@@ -542,10 +546,10 @@ XS(XS_version_new)
 		? HvNAME(SvSTASH(SvRV(ST(0))))
 		: (char *)SvPV_nolen(ST(0));
 
-	if ( items == 1 || vs == &PL_sv_undef ) { /* no param or explicit undef */
+	if ( items == 1 || ! SvOK(vs) ) { /* no param or explicit undef */
 	    /* create empty object */
 	    vs = sv_newmortal();
-	    sv_setpvs(vs,"");
+	    sv_setpvs(vs, "0");
 	}
 	else if ( items == 3 ) {
 	    vs = sv_newmortal();
@@ -655,7 +659,7 @@ XS(XS_version_vcmp)
 
 	       if ( ! sv_derived_from(robj, "version") )
 	       {
-		    robj = new_version(robj);
+		    robj = new_version(SvOK(robj) ? robj : newSVpvs("0"));
 	       }
 	       rvs = SvRV(robj);
 
@@ -739,7 +743,7 @@ XS(XS_version_qv)
 	SV * ver = ST(0);
 	SV * rv;
 	const char * classname = "";
-	if ( items == 2 && (ST(1)) != &PL_sv_undef ) {
+	if ( items == 2 && SvOK(ST(1)) ) {
 	    /* getting called as object or class method */
 	    ver = ST(1);
 	    classname = 
@@ -1364,7 +1368,7 @@ XS(XS_Tie_Hash_NamedCapture_FETCH)
 
     rx = PL_curpm ? PM_GETRE(PL_curpm) : NULL;
 
-    if (!rx)
+    if (!rx || !SvROK(ST(0)))
         XSRETURN_UNDEF;
 
     SP -= items;
@@ -1394,7 +1398,7 @@ XS(XS_Tie_Hash_NamedCapture_STORE)
 
     rx = PL_curpm ? PM_GETRE(PL_curpm) : NULL;
 
-    if (!rx) {
+    if (!rx || !SvROK(ST(0))) {
         if (!PL_localizing)
             Perl_croak(aTHX_ "%s", PL_no_modify);
         else
@@ -1417,7 +1421,7 @@ XS(XS_Tie_Hash_NamedCapture_DELETE)
     if (items != 2)
 	croak_xs_usage(cv, "$key, $flags");
 
-    if (!rx)
+    if (!rx || !SvROK(ST(0)))
         Perl_croak(aTHX_ "%s", PL_no_modify);
 
     SP -= items;
@@ -1438,7 +1442,7 @@ XS(XS_Tie_Hash_NamedCapture_CLEAR)
 
     rx = PL_curpm ? PM_GETRE(PL_curpm) : NULL;
 
-    if (!rx)
+    if (!rx || !SvROK(ST(0)))
         Perl_croak(aTHX_ "%s", PL_no_modify);
 
     SP -= items;
@@ -1460,7 +1464,7 @@ XS(XS_Tie_Hash_NamedCapture_EXISTS)
 
     rx = PL_curpm ? PM_GETRE(PL_curpm) : NULL;
 
-    if (!rx)
+    if (!rx || !SvROK(ST(0)))
         XSRETURN_UNDEF;
 
     SP -= items;
@@ -1488,7 +1492,7 @@ XS(XS_Tie_Hash_NamedCapture_FIRSTK)
 
     rx = PL_curpm ? PM_GETRE(PL_curpm) : NULL;
 
-    if (!rx)
+    if (!rx || !SvROK(ST(0)))
         XSRETURN_UNDEF;
 
     SP -= items;
@@ -1520,7 +1524,7 @@ XS(XS_Tie_Hash_NamedCapture_NEXTK)
 
     rx = PL_curpm ? PM_GETRE(PL_curpm) : NULL;
 
-    if (!rx)
+    if (!rx || !SvROK(ST(0)))
         XSRETURN_UNDEF;
 
     SP -= items;
@@ -1551,7 +1555,7 @@ XS(XS_Tie_Hash_NamedCapture_SCALAR)
 
     rx = PL_curpm ? PM_GETRE(PL_curpm) : NULL;
 
-    if (!rx)
+    if (!rx || !SvROK(ST(0)))
         XSRETURN_UNDEF;
 
     SP -= items;

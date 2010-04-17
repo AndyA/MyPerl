@@ -80,30 +80,16 @@ struct xpvhv_aux {
     struct mro_meta *xhv_mro_meta;
 };
 
-#define _XPVHV_ALLOCATED_HEAD						    \
-    STRLEN	xhv_fill;	/* how full xhv_array currently is */	    \
-    STRLEN	xhv_max		/* subscript of last element of xhv_array */
-
-#define _XPVHV_HEAD	\
-    union _xnvu xnv_u;	\
-    _XPVHV_ALLOCATED_HEAD
-
 /* hash structure: */
 /* This structure must match the beginning of struct xpvmg in sv.h. */
 struct xpvhv {
-    _XPVHV_HEAD;
+    union _xnvu xnv_u;
+    STRLEN      xhv_fill;       /* how full xhv_array currently is */
+    STRLEN      xhv_max;        /* subscript of last element of xhv_array */
     _XPVMG_HEAD;
 };
 
 #define xhv_keys xiv_u.xivu_iv
-
-typedef struct {
-    _XPVHV_ALLOCATED_HEAD;
-    _XPVMG_HEAD;
-} xpvhv_allocated;
-
-#undef _XPVHV_ALLOCATED_HEAD
-#undef _XPVHV_HEAD
 
 /* hash a key */
 /* FYI: This is the "One-at-a-Time" algorithm by Bob Jenkins
@@ -220,7 +206,7 @@ If you are using C<HePV> to get values to pass to C<newSVpvn()> to create a
 new SV, you should consider using C<newSVhek(HeKEY_hek(he))> as it is more
 efficient.
 
-=for apidoc Am|char*|HeUTF8|HE* he|STRLEN len
+=for apidoc Am|char*|HeUTF8|HE* he
 Returns whether the C<char *> value returned by C<HePV> is encoded in UTF-8,
 doing any necessary dereferencing of possibly C<SV*> keys.  The value returned
 will be 0 or non-0, not necessarily 1 (or even a value with any low bits set),

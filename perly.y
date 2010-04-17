@@ -73,6 +73,7 @@
 
 %token <opval> WORD METHOD FUNCMETH THING PMFUNC PRIVATEREF
 %token <opval> FUNC0SUB UNIOPSUB LSTOPSUB
+%token <opval> PLUGEXPR PLUGSTMT
 %token <p_tkval> LABEL
 %token <i_tkval> FORMAT SUB ANONSUB PACKAGE USE
 %token <i_tkval> WHILE UNTIL IF UNLESS ELSE ELSIF CONTINUE FOR
@@ -157,7 +158,7 @@ remember:	/* NULL */	/* start a full lexical scope */
 	;
 
 mydefsv:	/* NULL */	/* lexicalize $_ */
-			{ $$ = (I32) allocmy("$_"); }
+			{ $$ = (I32) Perl_allocmy(aTHX_ STR_WITH_LEN("$_"), 0); }
 	;
 
 progstart:
@@ -241,6 +242,8 @@ line	:	label cond
 			      }
 			  })
 			}
+	|	label PLUGSTMT
+			{ $$ = newSTATEOP(0, PVAL($1), $2); }
 	;
 
 /* An expression which may have a side-effect */
@@ -329,7 +332,7 @@ cont	:	/* NULL */
 /* Loops: while, until, for, and a bare block */
 loop	:	label WHILE '(' remember texpr ')' mintro mblock cont
 			{ OP *innerop;
-			  PL_parser->copline = (line_t)$2;
+			  PL_parser->copline = (line_t)IVAL($2);
 			    $$ = block_end($4,
 				   newSTATEOP(0, PVAL($1),
 				     innerop = newWHILEOP(0, 1, (LOOP*)(OP*)NULL,
@@ -342,7 +345,7 @@ loop	:	label WHILE '(' remember texpr ')' mintro mblock cont
 
 	|	label UNTIL '(' remember iexpr ')' mintro mblock cont
 			{ OP *innerop;
-			  PL_parser->copline = (line_t)$2;
+			  PL_parser->copline = (line_t)IVAL($2);
 			    $$ = block_end($4,
 				   newSTATEOP(0, PVAL($1),
 				     innerop = newWHILEOP(0, 1, (LOOP*)(OP*)NULL,
@@ -424,7 +427,7 @@ loop	:	label WHILE '(' remember texpr ')' mintro mblock cont
 
 /* Switch blocks */
 switch	:	label GIVEN '(' remember mydefsv mexpr ')' mblock
-			{ PL_parser->copline = (line_t) $2;
+			{ PL_parser->copline = (line_t) IVAL($2);
 			    $$ = block_end($4,
 				newSTATEOP(0, PVAL($1),
 				    newGIVENOP($6, scope($8),
@@ -508,7 +511,9 @@ peg	:	PEG
 	;
 
 format	:	FORMAT startformsub formname block
-			{ SvREFCNT_inc_simple_void(PL_compcv);
+			{
+			  CV *fmtcv = PL_compcv;
+			  SvREFCNT_inc_simple_void(PL_compcv);
 #ifdef MAD
 			  $$ = newFORM($2, $3, $4);
 			  prepend_madprops($1->tk_mad, $$, 'F');
@@ -518,6 +523,10 @@ format	:	FORMAT startformsub formname block
 			  newFORM($2, $3, $4);
 			  $$ = (OP*)NULL;
 #endif
+			  if (CvOUTSIDE(fmtcv) && !CvUNIQUE(CvOUTSIDE(fmtcv))) {
+			    SvREFCNT_inc_simple_void(fmtcv);
+			    pad_add_anon((SV*)fmtcv, OP_NULL);
+			  }
 			}
 	;
 
@@ -633,14 +642,18 @@ subbody	:	block	{ $$ = $1; }
 			}
 	;
 
-package :	PACKAGE WORD ';'
+package :	PACKAGE WORD WORD ';'
 			{
 #ifdef MAD
-			  $$ = package($2);
+			  $$ = package($3);
 			  token_getmad($1,$$,'o');
-			  token_getmad($3,$$,';');
+			  if ($2)
+			      package_version($2);
+			  token_getmad($4,$$,';');
 #else
-			  package($2);
+			  package($3);
+			  if ($2)
+			      package_version($2);
 			  $$ = (OP*)NULL;
 #endif
 			}
@@ -656,7 +669,7 @@ use	:	USE startsub
 			  token_getmad($7,$$,';');
 			  if (PL_parser->rsfp_filters &&
 				      AvFILLp(PL_parser->rsfp_filters) >= 0)
-			      append_madprops(newMADPROP('!', MAD_PV, "", 0), $$, 0);
+			      append_madprops(newMADPROP('!', MAD_NULL, NULL, 0), $$, 0);
 #else
 			  utilize(IVAL($1), $2, $4, $5, $6);
 			  $$ = (OP*)NULL;
@@ -1238,7 +1251,9 @@ term	:	termbinop
 			{
 			  $$ = newLISTOP(OP_DIE, 0, newOP(OP_PUSHMARK, 0),
 				newSVOP(OP_CONST, 0, newSVpvs("Unimplemented")));
+			  TOKEN_GETMAD($1,$$,'X');
 			}
+	|	PLUGEXPR
 	;
 
 /* "my" declarations, with optional attributes */

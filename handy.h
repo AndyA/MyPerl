@@ -110,6 +110,12 @@ Null SV pointer. (No longer available when C<PERL_CORE> is defined.)
 # define HAS_BOOL 1
 #endif
 
+/* a simple (bool) cast may not do the right thing: if bool is defined
+ * as char for example, then the cast from int is implementation-defined
+ */
+
+#define cBOOL(cbool) ((bool)!!(cbool))
+
 /* Try to figure out __func__ or __FUNCTION__ equivalent, if any.
  * XXX Should really be a Configure probe, with HAS__FUNCTION__
  *     and FUNCTION__ as results.
@@ -190,8 +196,13 @@ typedef U64TYPE U64;
 #               define INT64_C(c)	CAT2(c,L)
 #               define UINT64_C(c)	CAT2(c,UL)
 #           else
-#               define INT64_C(c)	((I64TYPE)(c))
-#               define UINT64_C(c)	((U64TYPE)(c))
+#               if defined(_WIN64) && defined(_MSC_VER)
+#                   define INT64_C(c)	CAT2(c,I64)
+#                   define UINT64_C(c)	CAT2(c,UI64)
+#               else
+#                   define INT64_C(c)	((I64TYPE)(c))
+#                   define UINT64_C(c)	((U64TYPE)(c))
+#               endif
 #           endif
 #       endif
 #   endif
@@ -203,7 +214,7 @@ typedef U64TYPE U64;
  * GMTIME_MAX	GMTIME_MIN	LOCALTIME_MAX	LOCALTIME_MIN
  * HAS_CTIME64	HAS_LOCALTIME64	HAS_GMTIME64	HAS_DIFFTIME64
  * HAS_MKTIME64	HAS_ASCTIME64	HAS_GETADDRINFO	HAS_GETNAMEINFO
- * HAS_INETNTOP	HAS_INETPTON
+ * HAS_INETNTOP	HAS_INETPTON	CHARBITS	HAS_PRCTL
  * Not (yet) used at top level, but mention them for metaconfig
  */
 
@@ -424,7 +435,7 @@ Returns a boolean indicating whether the C C<char> is a US-ASCII (Basic Latin)
 alphanumeric character (including underscore) or digit.
 
 =for apidoc Am|bool|isALPHA|char ch
-Returns a boolean indicating whether the C C<char> is a US-ASCII (Basic Latin) 
+Returns a boolean indicating whether the C C<char> is a US-ASCII (Basic Latin)
 alphabetic character.
 
 =for apidoc Am|bool|isSPACE|char ch
@@ -457,6 +468,18 @@ US-ASCII (Basic Latin) range are viewed as not having any case.
 #define isALNUM(c)	(isALPHA(c) || isDIGIT(c) || (c) == '_')
 #define isIDFIRST(c)	(isALPHA(c) || (c) == '_')
 #define isALPHA(c)	(isUPPER(c) || isLOWER(c))
+/* ALPHAU includes Unicode semantics for latin1 characters.  It has an extra
+ * >= AA test to speed up ASCII-only tests at the expense of the others */
+#define isALPHAU(c)	(isALPHA(c) || (NATIVE_TO_UNI((U8) c) >= 0xAA \
+    && ((NATIVE_TO_UNI((U8) c) >= 0xC0 \
+	    && NATIVE_TO_UNI((U8) c) != 0xD7 && NATIVE_TO_UNI((U8) c) != 0xF7) \
+	|| NATIVE_TO_UNI((U8) c) == 0xAA \
+	|| NATIVE_TO_UNI((U8) c) == 0xB5 \
+	|| NATIVE_TO_UNI((U8) c) == 0xBA)))
+#define isALNUMU(c)	(isDIGIT(c) || isALPHAU(c) || (c) == '_')
+
+/* continuation character for legal NAME in \N{NAME} */
+#define isCHARNAME_CONT(c) (isALNUMU(c) || (c) == ' ' || (c) == '-' || (c) == '(' || (c) == ')' || (c) == ':' || NATIVE_TO_UNI((U8) c) == 0xA0)
 #define isSPACE(c) \
 	((c) == ' ' || (c) == '\t' || (c) == '\n' || (c) =='\r' || (c) == '\f')
 #define isPSXSPC(c)	(isSPACE(c) || (c) == '\v')
@@ -474,7 +497,9 @@ US-ASCII (Basic Latin) range are viewed as not having any case.
 #   define isPUNCT(c)	ispunct(c)
 #   define isXDIGIT(c)	isxdigit(c)
 #   define toUPPER(c)	toupper(c)
+#   define toUPPER_LATIN1_MOD(c)    UNI_TO_NATIVE(PL_mod_latin1_uc[(U8) NATIVE_TO_UNI(c)])
 #   define toLOWER(c)	tolower(c)
+#   define toLOWER_LATIN1(c)	UNI_TO_NATIVE(PL_latin1_lc[(U8) NATIVE_TO_UNI(c)])
 #else
 #   define isUPPER(c)	((c) >= 'A' && (c) <= 'Z')
 #   define isLOWER(c)	((c) >= 'a' && (c) <= 'z')
@@ -485,6 +510,15 @@ US-ASCII (Basic Latin) range are viewed as not having any case.
 #   define isPRINT(c)	(((c) >= 32 && (c) < 127))
 #   define isPUNCT(c)	(((c) >= 33 && (c) <= 47) || ((c) >= 58 && (c) <= 64)  || ((c) >= 91 && (c) <= 96) || ((c) >= 123 && (c) <= 126))
 #   define isXDIGIT(c)  (isDIGIT(c) || ((c) >= 'a' && (c) <= 'f') || ((c) >= 'A' && (c) <= 'F'))
+
+/* Use table lookup for speed */
+#   define toLOWER_LATIN1(c)	(PL_latin1_lc[(U8) c])
+
+/* Modified uc.  Is correct uc except for three non-ascii chars which are
+ * all mapped to one of them, and these need special handling */
+#   define toUPPER_LATIN1_MOD(c)    (PL_mod_latin1_uc[(U8) c])
+
+/* ASCII casing. */
 #   define toUPPER(c)	(isLOWER(c) ? (c) - ('a' - 'A') : (c))
 #   define toLOWER(c)	(isUPPER(c) ? (c) + ('a' - 'A') : (c))
 #endif
@@ -557,7 +591,6 @@ US-ASCII (Basic Latin) range are viewed as not having any case.
 #define isDIGIT_uni(c)		is_uni_digit(c)
 #define isUPPER_uni(c)		is_uni_upper(c)
 #define isLOWER_uni(c)		is_uni_lower(c)
-#define isALNUMC_uni(c)		is_uni_alnumc(c)
 #define isASCII_uni(c)		is_uni_ascii(c)
 #define isCNTRL_uni(c)		is_uni_cntrl(c)
 #define isGRAPH_uni(c)		is_uni_graph(c)
@@ -579,7 +612,6 @@ US-ASCII (Basic Latin) range are viewed as not having any case.
 #define isDIGIT_LC_uvchr(c)	(c < 256 ? isDIGIT_LC(c) : is_uni_digit_lc(c))
 #define isUPPER_LC_uvchr(c)	(c < 256 ? isUPPER_LC(c) : is_uni_upper_lc(c))
 #define isLOWER_LC_uvchr(c)	(c < 256 ? isLOWER_LC(c) : is_uni_lower_lc(c))
-#define isALNUMC_LC_uvchr(c)	(c < 256 ? isALNUMC_LC(c) : is_uni_alnumc_lc(c))
 #define isCNTRL_LC_uvchr(c)	(c < 256 ? isCNTRL_LC(c) : is_uni_cntrl_lc(c))
 #define isGRAPH_LC_uvchr(c)	(c < 256 ? isGRAPH_LC(c) : is_uni_graph_lc(c))
 #define isPRINT_LC_uvchr(c)	(c < 256 ? isPRINT_LC(c) : is_uni_print_lc(c))
@@ -598,7 +630,6 @@ US-ASCII (Basic Latin) range are viewed as not having any case.
 #define isDIGIT_utf8(p)		is_utf8_digit(p)
 #define isUPPER_utf8(p)		is_utf8_upper(p)
 #define isLOWER_utf8(p)		is_utf8_lower(p)
-#define isALNUMC_utf8(p)	is_utf8_alnumc(p)
 #define isASCII_utf8(p)		is_utf8_ascii(p)
 #define isCNTRL_utf8(p)		is_utf8_cntrl(p)
 #define isGRAPH_utf8(p)		is_utf8_graph(p)
@@ -643,6 +674,18 @@ US-ASCII (Basic Latin) range are viewed as not having any case.
 typedef U32 line_t;
 #define NOLINE ((line_t) 4294967295UL)
 
+/* Helpful alias for version prescan */
+#define is_LAX_VERSION(a,b) \
+	(a != Perl_prescan_version(aTHX_ a, FALSE, b, NULL, NULL, NULL, NULL))
+
+#define is_STRICT_VERSION(a,b) \
+	(a != Perl_prescan_version(aTHX_ a, TRUE, b, NULL, NULL, NULL, NULL))
+
+#define BADVERSION(a,b,c) \
+	if (b) { \
+	    *b = c; \
+	} \
+	return a;
 
 /*
 =head1 Memory Management
@@ -764,9 +807,9 @@ PoisonWith(0xEF) for catching access to freed memory.
  * implementation unless -DPERL_MEM_LOG_NOIMPL is also defined.
  *
  * Known problems:
- * - all memory allocs do not get logged, only those
+ * - not all memory allocs get logged, only those
  *   that go through Newx() and derivatives (while all
- *  Safefrees do get logged)
+ *   Safefrees do get logged)
  * - __FILE__ and __LINE__ do not work everywhere
  * - __func__ or __FUNCTION__ even less so
  * - I think more goes on after the perlio frees but
@@ -904,6 +947,13 @@ void Perl_mem_log_del_sv(const SV *sv, const char *filename, const int linenumbe
 #define pTHX__VALUE_
 #define pTHX__VALUE
 #endif /* USE_ITHREADS */
+
+/* Perl_deprecate was not part of the public API, and did not have a deprecate()
+   shortcut macro defined without -DPERL_CORE. Neither codesearch.google.com nor
+   CPAN::Unpack show any users outside the core.  */
+#ifdef PERL_CORE
+#  define deprecate(s) Perl_ck_warner_d(aTHX_ packWARN(WARN_DEPRECATED), "Use of " s " is deprecated")
+#endif
 
 /*
  * Local variables:

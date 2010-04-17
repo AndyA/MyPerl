@@ -1291,7 +1291,7 @@ S_qsortsvu(pTHX_ SV ** array, size_t num_elts, SVCOMPARE_t compare)
  * by the original comparison routine on the elements pointed to.
  * Because we don't move the elements of list1 around through
  * this phase, we can break ties on elements that compare equal
- * using their address in the list1 array, ensuring stabilty.
+ * using their address in the list1 array, ensuring stability.
  * This leaves us with something looking like
  *
  *  indir                  list1
@@ -1652,6 +1652,11 @@ PP(pp_sort)
 	    if (!(flags & OPf_SPECIAL)) {
 		cx->cx_type = CXt_SUB;
 		cx->blk_gimme = G_SCALAR;
+		/* If our comparison routine is already active (CvDEPTH is
+		 * is not 0),  then PUSHSUB does not increase the refcount,
+		 * so we have to do it ourselves, because the LEAVESUB fur-
+		 * ther down lowers it. */
+		if (CvDEPTH(cv)) SvREFCNT_inc_simple_void_NN(cv);
 		PUSHSUB(cx);
 		if (!is_xsub) {
 		    AV* const padlist = CvPADLIST(cv);
@@ -1757,8 +1762,6 @@ S_sortcv(pTHX_ SV *const a, SV *const b)
     CALLRUNOPS(aTHX);
     if (PL_stack_sp != PL_stack_base + 1)
 	Perl_croak(aTHX_ "Sort subroutine didn't return single value");
-    if (!SvNIOKp(*PL_stack_sp))
-	Perl_croak(aTHX_ "Sort subroutine didn't return a numeric value");
     result = SvIV(*PL_stack_sp);
     while (PL_scopestack_ix > oldscopeix) {
 	LEAVE;
@@ -1799,8 +1802,6 @@ S_sortcv_stacked(pTHX_ SV *const a, SV *const b)
     CALLRUNOPS(aTHX);
     if (PL_stack_sp != PL_stack_base + 1)
 	Perl_croak(aTHX_ "Sort subroutine didn't return single value");
-    if (!SvNIOKp(*PL_stack_sp))
-	Perl_croak(aTHX_ "Sort subroutine didn't return a numeric value");
     result = SvIV(*PL_stack_sp);
     while (PL_scopestack_ix > oldscopeix) {
 	LEAVE;
@@ -1829,8 +1830,6 @@ S_sortcv_xsub(pTHX_ SV *const a, SV *const b)
     (void)(*CvXSUB(cv))(aTHX_ cv);
     if (PL_stack_sp != PL_stack_base + 1)
 	Perl_croak(aTHX_ "Sort subroutine didn't return single value");
-    if (!SvNIOKp(*PL_stack_sp))
-	Perl_croak(aTHX_ "Sort subroutine didn't return a numeric value");
     result = SvIV(*PL_stack_sp);
     while (PL_scopestack_ix > oldscopeix) {
 	LEAVE;

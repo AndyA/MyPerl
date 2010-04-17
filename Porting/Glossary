@@ -249,6 +249,14 @@ cf_time (cf_who.U):
 	Holds the output of the "date" command when the configuration file was
 	produced. This is used to tag both config.sh and config_h.SH.
 
+charbits (charsize.U):
+	This variable contains the value of the CHARBITS symbol, which
+	indicates to the C program how many bits there are in a character.
+
+charsize (charsize.U):
+	This variable contains the value of the CHARSIZE symbol, which
+	indicates to the C program how many bytes there are in a character.
+
 chgrp (Loc.U):
 	This variable is defined but not used by Configure.
 	The value is the empty string and is not useful.
@@ -275,6 +283,23 @@ comm (Loc.U):
 compress (Loc.U):
 	This variable is defined but not used by Configure.
 	The value is the empty string and is not useful.
+
+config_arg0 (Options.U):
+	This variable contains the string used to invoke the Configure
+	command, as reported by the shell in the $0 variable.
+
+config_argc (Options.U):
+	This variable countains the number of command-line arguments
+	passed to Configure, as reported by the shell in the $# variable.
+	The individual arguments are stored as variables config_argc1,
+	config_argc2, etc.
+
+config_args (Options.U):
+	This variable contains a single string giving the command-line
+	arguments passed to Configure.	Spaces within arguments,
+	quotes, and escaped characters are not correctly preserved.
+	To reconstruct the command line, you must assemble the individual
+	command line pieces, given in config_arg[0-9]*.
 
 contains (contains.U):
 	This variable holds the command to do a grep with a proper return
@@ -1591,6 +1616,15 @@ d_portable (d_portable.U):
 	This variable conditionally defines the PORTABLE symbol, which
 	indicates to the C program that it should not assume that it is
 	running on the machine it was compiled on.
+
+d_prctl (d_prctl.U):
+	This variable conditionally defines the HAS_PRCTL symbol, which
+	indicates to the C program that the prctl() routine is available.
+
+d_prctl_set_name (d_prctl.U):
+	This variable conditionally defines the HAS_PRCTL_SET_NAME symbol,
+	which indicates to the C program that the prctl() routine supports
+	the PR_SET_NAME option.
 
 d_PRId64 (quadfio.U):
 	This variable conditionally defines the PERL_PRId64 symbol, which
@@ -5070,6 +5104,11 @@ uvxformat (perlxvf.U):
 uvXUformat (perlxvf.U):
 	This variable contains the format string used for printing
 	a Perl UV as an unsigned hexadecimal integer in uppercase ABCDEF.
+
+vaproto (vaproto.U):
+	This variable conditionally defines CAN_VAPROTO on systems supporting
+	prototype declaration of functions with a variable number of
+	arguments. See also prototype.
 
 vendorarch (vendorarch.U):
 	This variable contains the value of the PERL_VENDORARCH symbol.

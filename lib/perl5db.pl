@@ -3639,6 +3639,8 @@ arguments with which the subroutine was invoked
 =cut
 
 sub sub {
+	# Do not use a regex in this subroutine -> results in corrupted memory
+	# See: [perl #66110]
 
 	# lock ourselves under threads
 	lock($DBGR);
@@ -3647,7 +3649,7 @@ sub sub {
     # sub's return value in (if needed), and an array to put the sub's
     # return value in (if needed).
     my ( $al, $ret, @ret ) = "";
-	if ($sub =~ /^threads::new$/ && $ENV{PERL5DB_THREADED}) {
+	if ($sub eq 'threads::new' && $ENV{PERL5DB_THREADED}) {
 		print "creating new thread\n"; 
 	}
 
@@ -4833,30 +4835,21 @@ Display the (nested) parentage of the module or object given.
 sub cmd_i {
     my $cmd  = shift;
     my $line = shift;
-    eval { require Class::ISA };
-    if ($@) {
-        &warn( $@ =~ /locate/
-            ? "Class::ISA module not found - please install\n"
-            : $@ );
-    }
-    else {
-      ISA:
-        foreach my $isa ( split( /\s+/, $line ) ) {
-            $evalarg = $isa;
-            ($isa) = &eval;
-            no strict 'refs';
-            print join(
-                ', ',
-                map {    # snaffled unceremoniously from Class::ISA
-                    "$_"
-                      . (
-                        defined( ${"$_\::VERSION"} )
-                        ? ' ' . ${"$_\::VERSION"}
-                        : undef )
-                  } Class::ISA::self_and_super_path(ref($isa) || $isa)
-            );
-            print "\n";
-        }
+    foreach my $isa ( split( /\s+/, $line ) ) {
+        $evalarg = $isa;
+        ($isa) = &eval;
+        no strict 'refs';
+        print join(
+            ', ',
+            map {
+                "$_"
+                  . (
+                    defined( ${"$_\::VERSION"} )
+                    ? ' ' . ${"$_\::VERSION"}
+                    : undef )
+              } @{mro::get_linear_isa(ref($isa) || $isa)}
+        );
+        print "\n";
     }
 } ## end sub cmd_i
 
@@ -8181,10 +8174,8 @@ my @pods = qw(
     lexwarn
     locale
     lol
-    machten
     macos
     macosx
-    mint
     modinstall
     modlib
     mod

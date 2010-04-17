@@ -153,7 +153,7 @@ Deprecated.  Use C<GIMME_V> instead.
 	      : G_SCALAR)						\
 	   : dowantarray())
 
-/* NOTE: OP_NEXTSTATE, OP_DBSTATE, and OP_SETSTATE (i.e. COPs) carry lower
+/* NOTE: OP_NEXTSTATE and OP_DBSTATE (i.e. COPs) carry lower
  * bits of PL_hints in op_private */
 
 /* Private for lvalues */
@@ -244,6 +244,7 @@ Deprecated.  Use C<GIMME_V> instead.
 
 /* Private for OP_DELETE */
 #define OPpSLICE		64	/* Operating on a list of keys */
+/* Also OPpLVAL_INTRO (128) */
 
 /* Private for OP_EXISTS */
 #define OPpEXISTS_SUB		64	/* Checking for &sub, not {} or [].  */
@@ -256,6 +257,9 @@ Deprecated.  Use C<GIMME_V> instead.
 #define OPpSORT_DESCEND		16	/* Descending sort */
 #define OPpSORT_QSORT		32	/* Use quicksort (not mergesort) */
 #define OPpSORT_STABLE		64	/* Use a stable algorithm */
+
+/* Private for OP_REVERSE */
+#define OPpREVERSE_INPLACE	8	/* reverse in-place (@a = reverse @a) */
 
 /* Private for OP_OPEN and OP_BACKTICK */
 #define OPpOPEN_IN_RAW		16	/* binmode(F,":raw") on input fh */
@@ -645,7 +649,7 @@ struct loop {
 
 struct madprop {
     MADPROP* mad_next;
-    const void *mad_val;
+    void *mad_val;
     U32 mad_vlen;
 /*    short mad_count; */
     char mad_key;

@@ -7,8 +7,9 @@ BEGIN {
 
 require 'test.pl';
 use strict qw(refs subs);
+use re ();
 
-plan(189);
+plan(196);
 
 # Test glob operations.
 
@@ -124,6 +125,32 @@ $subrefref = \\&mysub2;
 is ($$subrefref->("GOOD"), "good");
 sub mysub2 { lc shift }
 
+# Test REGEXP assignment
+
+{
+    my $x = qr/x/;
+    my $str = "$x"; # regex stringification may change
+
+    my $y = $$x;
+    is ($y, $str, "bare REGEXP stringifies correctly");
+    ok (eval { "x" =~ $y }, "bare REGEXP matches correctly");
+    
+    my $z = \$y;
+    ok (re::is_regexp($z), "new ref to REXEXP passes is_regexp");
+    is ($z, $str, "new ref to REGEXP stringifies correctly");
+    ok (eval { "x" =~ $z }, "new ref to REGEXP matches correctly");
+}
+{
+    my ($x, $str);
+    {
+        my $y = qr/x/;
+        $str = "$y";
+        $x = $$y;
+    }
+    is ($x, $str, "REGEXP keeps a ref to its mother_re");
+    ok (eval { "x" =~ $x }, "REGEXP with mother_re still matches");
+}
+
 # Test the ref operator.
 
 sub PVBM () { 'foo' }
@@ -166,8 +193,8 @@ for (
     like ("$ref", qr/^$type\(0x[0-9a-f]+\)$/, "stringify for ref to $desc");
 }
 
-is (ref *STDOUT{IO}, 'IO::Handle', 'IO refs are blessed into IO::Handle');
-like (*STDOUT{IO}, qr/^IO::Handle=IO\(0x[0-9a-f]+\)$/,
+is (ref *STDOUT{IO}, 'IO::File', 'IO refs are blessed into IO::File');
+like (*STDOUT{IO}, qr/^IO::File=IO\(0x[0-9a-f]+\)$/,
     'stringify for IO refs');
 
 # Test anonymous hash syntax.
@@ -413,10 +440,13 @@ is (runperl(
 # REGEX pad had already been freed (ithreads build only). The
 # object is required to trigger the early freeing of GV refs to to STDOUT
 
-like (runperl(
-    prog => '$x=bless[]; sub IO::Handle::DESTROY{$_="bad";s/bad/ok/;print}',
-    stderr => 1
-      ), qr/^(ok)+$/, 'STDOUT destructor');
+TODO: {
+    local $TODO = "works but output through pipe is mangled" if $^O eq 'VMS';
+    like (runperl(
+        prog => '$x=bless[]; sub IO::Handle::DESTROY{$_="bad";s/bad/ok/;print}',
+        stderr => 1
+          ), qr/^(ok)+$/, 'STDOUT destructor');
+}
 
 TODO: {
     no strict 'refs';
@@ -588,9 +618,10 @@ ok (!eval { $rpvbm->foo }, 'PVBM is not an object');
 is( runperl(stderr => 1, prog => 'map eval qq(exit),1 for 1'), "");
 is( runperl(stderr => 1, prog => 'eval { for (1) { map { die } 2 } };'), "");
 is( runperl(stderr => 1, prog => 'for (125) { map { exit } (213)}'), "");
-is( runperl(stderr => 1, prog => 'map die,4 for 3'), "Died at -e line 1.\n");
-is( runperl(stderr => 1, prog => 'grep die,4 for 3'), "Died at -e line 1.\n");
-is( runperl(stderr => 1, prog => 'for $a (3) {@b=sort {die} 4,5}'), "Died at -e line 1.\n");
+my $hushed = $^O eq 'VMS' ? 'use vmsish qw(hushed);' : '';
+is( runperl(stderr => 1, prog => $hushed . 'map die,4 for 3'), "Died at -e line 1.\n");
+is( runperl(stderr => 1, prog => $hushed . 'grep die,4 for 3'), "Died at -e line 1.\n");
+is( runperl(stderr => 1, prog => $hushed . 'for $a (3) {@b=sort {die} 4,5}'), "Died at -e line 1.\n");
 
 # bug 57564
 is( runperl(stderr => 1, prog => 'my $i;for $i (1) { for $i (2) { } }'), "");

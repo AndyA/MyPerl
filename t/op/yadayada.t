@@ -16,30 +16,35 @@ eval { ... };
 
 is $@, $err;
 
-$err = "foo at $0 line " . ( __LINE__ + 2 ) . ".\n";
 
-eval { !!! "foo" };
+#
+# Regression tests, making sure ... is still parsable as an operator.
+#
+my @lines = split /\n/ => <<'--';
 
-is $@, $err;
+# Check simple range operator.
+my @arr = 'A' ... 'D';
 
-$err = "Died at $0 line " . ( __LINE__ + 2 ) . ".\n";
+# Range operator with print.
+print 'D' ... 'A';
 
-eval { !!! };
+# Without quotes, 'D' could be a file handle.
+print  D  ...  A ;
 
-is $@, $err;
+# Another possible interaction with a file handle.
+print ${\"D"}  ...  A ;
+--
 
-my $warning;
-
-local $SIG{__WARN__} = sub { $warning = shift };
-
-$err = "bar at $0 line " . ( __LINE__ + 2 ) . ".\n";
-
-eval { ??? "bar" };
-
-is $warning, $err;
-
-$err = "Warning: something's wrong at $0 line " . ( __LINE__ + 2 ) . ".\n";
-
-eval { ??? };
-
-is $warning, $err;
+foreach my $line (@lines) {
+    next if $line =~ /^\s*#/ || $line !~ /\S/;
+    my $mess = qq {Parsing '...' in "$line" as a range operator};
+    eval qq {
+       {local *STDOUT; no strict "subs"; $line;}
+        pass \$mess;
+        1;
+    } or do {
+        my $err = $@;
+        $err =~ s/\n//g;
+        fail "$mess ($err)";
+    }
+}

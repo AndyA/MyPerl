@@ -1,7 +1,7 @@
 /* WIN32.H
  *
  * (c) 1995 Microsoft Corporation. All rights reserved.
- * 		Developed by hip communications inc., http://info.hip.com/info/
+ * 		Developed by hip communications inc.
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
@@ -57,6 +57,23 @@
 
 #define  WIN32_LEAN_AND_MEAN
 #include <windows.h>
+
+/*
+ * Bug in winbase.h in mingw-w64 4.4.0-1 at least... they
+ * do #define GetEnvironmentStringsA GetEnvironmentStrings and fail
+ * to declare GetEnvironmentStringsA.
+ */
+#if defined(__MINGW64__) && defined(GetEnvironmentStringsA) && !defined(UNICODE)
+#ifdef __cplusplus
+extern "C" {
+#endif
+#undef GetEnvironmentStringsA
+WINBASEAPI LPCH WINAPI GetEnvironmentStringsA(VOID);
+#define GetEnvironmentStrings GetEnvironmentStringsA
+#ifdef __cplusplus
+}
+#endif
+#endif
 
 #ifdef   WIN32_LEAN_AND_MEAN		/* C file is NOT a Perl5 original. */
 #define  CONTEXT	PERL_CONTEXT	/* Avoid conflict of CONTEXT defs. */
@@ -243,7 +260,9 @@ typedef long		gid_t;
 #endif
 #define flushall	_flushall
 #define fcloseall	_fcloseall
+#ifndef isnan
 #define isnan		_isnan	/* ...same libraries as MSVC */
+#endif
 
 #ifndef _O_NOINHERIT
 #  define _O_NOINHERIT	0x0080

@@ -8,15 +8,16 @@ use File::Basename;
 use FindBin;
 
 my $Opts = {};
-getopts( 'r:p:e:vudn', $Opts );
+getopts( 'r:p:e:c:vudn', $Opts );
 
-my $Cwd         = cwd(); 
+my $Cwd         = cwd();
 my $Verbose     = 1;
 my $ExcludeRe   = $Opts->{e} ? qr/$Opts->{e}/i : undef;
 my $Debug       = $Opts->{v} || 0;
 my $RunDiff     = $Opts->{d} || 0;
 my $PkgDir      = $Opts->{p} || cwd();
 my $Repo        = $Opts->{r} or die "Need repository!\n". usage();
+my $Changes     = $Opts->{c} || 'Changes ChangeLog';
 my $NoBranch    = $Opts->{n} || 0;
 
 ### strip trailing slashes;
@@ -33,7 +34,7 @@ if ( $NoBranch ) {
     ### create a copy of the repo directory
     my $RepoCopy = "$Repo-$BranchName";
     print "Copying repository to $RepoCopy ..." if $Verbose;
-    
+
     ### --archive == -dPpR, but --archive is not portable, and neither
     ### is -d, so settling for -PpR
     system( "cp -PpR -f $Repo $RepoCopy" )
@@ -71,7 +72,7 @@ my @LibFiles;
         if -d '.git' || -d '.svn';
     die "No lib/ directory found\n" unless -d 'lib';
     system( "cp -fR $CPV lib $Repo" ) and die "Copy of lib/ failed: $?";
-    
+
     @LibFiles =    map { chomp; $_ }
                     ### should we get rid of this file?
                     grep { $ExcludeRe && $_ =~ $ExcludeRe
@@ -80,9 +81,9 @@ my @LibFiles;
                                 undef
                             }
                         : 1
-                     } `find $Repo/lib -type f`
+                     } `find lib -type f`
         or die "Could not detect library files\n";
-      
+
     print "done\n" if $Verbose;
 }
 
@@ -141,11 +142,11 @@ my @TestFiles;
                     ### should we get rid of this file?
                     grep { $ExcludeRe && $_ =~ $ExcludeRe
                         ? do {  warn "Removing $_\n";
-                                system("rm $_") and die "rm '$_' failed: $?";
+                                system("rm $TopDir/$_") and die "rm '$_' failed: $?";
                                 undef
                             }
                         : 1
-                     } `find $TopDir/t -type f`
+                     } `find t -type f`
         or die "Could not detect testfiles\n";
 
     print "done\n" if $Verbose;
@@ -153,7 +154,7 @@ my @TestFiles;
 
 my $BinDir;
 my @BinFiles;
-my $TopBinDir; 
+my $TopBinDir;
 BIN: {
     $BinDir = -d 'bin'      ? 'bin' :
               -d 'scripts'  ? 'scripts' : undef ;
@@ -173,15 +174,27 @@ BIN: {
                 ### should we get rid of this file?
                 grep { $ExcludeRe && $_ =~ $ExcludeRe
                     ? do {  warn "Removing $_\n";
-                            system("rm $_") and die "rm '$_' failed: $?";
+                            system("rm $TopDir/$_") and die "rm '$_' failed: $?";
                             undef
                         }
                     : 1
-                 } `find $TopBinDir -type f`
+                 } `find $BinDir -type f`
         or die "Could not detect binfiles\n";
 
     print "done\n" if $Verbose;
 }
+
+### copy over change log
+my @Changes;
+foreach my $cl (split m/\s+/ => $Changes) {
+    -f $cl or next;
+    push @Changes, $cl;
+    print "Copying $cl files to $TopDir..." if $Verbose;
+
+    system( "cp -f $CPV $cl $TopDir" )
+        and die "Copy of $cl failed: $?";
+}
+
 
 ### add files where they are required
 my @NewFiles;
@@ -358,49 +371,6 @@ my @ChangedFiles;
     }
 }
 
-### binary files must be encoded!
-### XXX use the new 'uupacktool.pl'
-{   my $pack = "$Repo/uupacktool.pl";
-
-    ### pack.pl encodes binary files for us
-    -e $pack or die "Need $pack to encode binary files!";
-
-    ### chdir, so uupacktool writes relative files properly
-    ### into it's header...
-    my $curdir = cwd();
-    chdir($Repo) or die "Could not chdir to '$Repo': $!";
-
-    for my $aref ( \@ModFiles, \@TestFiles, \@BinFiles ) {
-        for my $file ( @$aref ) {
-            my $full = -e $file                 ? $file              :
-                       -e "$RelTopDir/$file"    ? "$RelTopDir/$file" :
-                       die "Can not find $file in $Repo or $TopDir\n";
-
-            if( -f $full && -s _ && -B _ ) {
-                print "Binary file $file needs encoding\n" if $Verbose;
-
-                my $out = $full . '.packed';
-
-                ### does the file exist already?
-                ### and doesn't have +w
-                if( -e $out && not -w _ ) {
-                    system("chmod +w $out")
-                        and die "Could not set chmod +w to '$out': $!";
-                }
-
-                ### -D to remove the original
-                system("$^X $pack -D -p $full $out")
-                    and die "Could not encode $full to $out";
-
-
-                $file .= '.packed';
-            }
-        }
-    }
-
-    chdir($curdir) or die "Could not chdir back to '$curdir': $!";
-}
-
 ### update the manifest
 {   my $file        = $Repo . '/MANIFEST';
     my @manifest;
@@ -422,6 +392,10 @@ my @ChangedFiles;
     for ( @BinFiles ) {
         $pkg_files{"$RelTopDir/$_"} = "$RelTopDir/$_\tthe ".
                                             basename($_) ." utility\n";
+    }
+
+    for ( @Changes ) {
+        $pkg_files{"$RelTopDir/$_"} = "$RelTopDir/$_\t$ModName change log\n";
     }
 
     for ( @NewFiles ) {
@@ -503,9 +477,9 @@ if( $RunDiff ) {
 # add files to git index
 unless ( $NoBranch ) {
     chdir $Repo;
-    system( "git add $CPV $_" ) 
-        for ( @LibFiles, @NewFiles, @ChangedFiles, 
-              map { "$RelTopDir/$_" } @TestFiles, @BinFiles );
+    system( "git add $CPV $_" )
+        for ( @LibFiles, @NewFiles, @ChangedFiles,
+              map { "$RelTopDir/$_" } @TestFiles, @BinFiles, @Changes );
 }
 
 # return to original directory
@@ -520,6 +494,7 @@ Usage: $me -r PERL_REPO_DIR [-p PACKAGE_DIR] [-v] [-d] [-e REGEX]
 Options:
   -r    Path to perl-core git repository
   -v    Run verbosely
+  -c    File containing changelog (default 'Changes' or 'ChangeLog')
   -e    Perl regex matching files that shouldn't be included
   -d    Create a diff as patch file
   -p    Path to the package to add. Defaults to cwd()

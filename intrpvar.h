@@ -43,6 +43,9 @@ PERLVAR(Istack_base,	SV **)
 PERLVAR(Istack_max,	SV **)
 
 PERLVAR(Iscopestack,	I32 *)		/* scopes we've ENTERed */
+/* name of the scopes we've ENTERed. Only used with -DDEBUGGING, but needs to be
+   present always, as -DDEUBGGING must be binary compatible with non.  */
+PERLVARI(Iscopestack_name, const char * *, NULL)
 PERLVAR(Iscopestack_ix,	I32)
 PERLVAR(Iscopestack_max,I32)
 
@@ -169,6 +172,20 @@ PERLVARA(Icolors,6,	char *)		/* from regcomp.c */
 
 PERLVARI(Ipeepp,	peep_t, MEMBER_TO_FPTR(Perl_peep))
 					/* Pointer to peephole optimizer */
+
+/*
+=for apidoc Amn|Perl_ophook_t|PL_opfreehook
+
+When non-C<NULL>, the function pointed by this variable will be called each time an OP is freed with the corresponding OP as the argument.
+This allows extensions to free any extra attribute they have locally attached to an OP.
+It is also assured to first fire for the parent OP and then for its kids.
+
+When you replace this variable, it is considered a good practice to store the possibly previously installed hook and that you recall it inside your own.
+
+=cut
+*/
+
+PERLVARI(Iopfreehook,	Perl_ophook_t, 0) /* op_free() hook */
 
 PERLVARI(Imaxscream,	I32,	-1)
 PERLVARI(Ireginterp_cnt,I32,	 0)	/* Whether "Regexp" was interpolated. */
@@ -499,10 +516,12 @@ PERLVAR(Inumeric_name,	char *)		/* Name of current numeric locale */
 
 /* utf8 character classes */
 PERLVAR(Iutf8_alnum,	SV *)
-PERLVAR(Iutf8_alnumc,	SV *)
 PERLVAR(Iutf8_ascii,	SV *)
 PERLVAR(Iutf8_alpha,	SV *)
 PERLVAR(Iutf8_space,	SV *)
+PERLVAR(Iutf8_perl_space,	SV *)
+PERLVAR(Iutf8_perl_word,	SV *)
+PERLVAR(Iutf8_posix_digit,	SV *)
 PERLVAR(Iutf8_cntrl,	SV *)
 PERLVAR(Iutf8_graph,	SV *)
 PERLVAR(Iutf8_digit,	SV *)
@@ -512,6 +531,16 @@ PERLVAR(Iutf8_print,	SV *)
 PERLVAR(Iutf8_punct,	SV *)
 PERLVAR(Iutf8_xdigit,	SV *)
 PERLVAR(Iutf8_mark,	SV *)
+PERLVAR(Iutf8_X_begin,	SV *)
+PERLVAR(Iutf8_X_extend,	SV *)
+PERLVAR(Iutf8_X_prepend,	SV *)
+PERLVAR(Iutf8_X_non_hangul,	SV *)
+PERLVAR(Iutf8_X_L,	SV *)
+PERLVAR(Iutf8_X_LV,	SV *)
+PERLVAR(Iutf8_X_LVT,	SV *)
+PERLVAR(Iutf8_X_T,	SV *)
+PERLVAR(Iutf8_X_V,	SV *)
+PERLVAR(Iutf8_X_LV_LVT_V,	SV *)
 PERLVAR(Iutf8_toupper,	SV *)
 PERLVAR(Iutf8_totitle,	SV *)
 PERLVAR(Iutf8_tolower,	SV *)

@@ -42,7 +42,7 @@ If you have problems, corrections, or questions, please see
 L<"Reporting Problems"> below.
 
 For information on what's new in this release, see the
-pod/perl5110delta.pod file.  For more information about how to find more
+pod/perl5130delta.pod file.  For more information about how to find more
 specific detail about changes, see the Changes file.
 
 =head1 DESCRIPTION
@@ -75,10 +75,10 @@ directory.
 
 =head2 Changes and Incompatibilities
 
-Please see pod/perl5110delta.pod for a description of the changes and
+Please see pod/perl5130delta.pod for a description of the changes and
 potential incompatibilities introduced with this release.  A few of
 the most important issues are listed below, but you should refer
-to pod/perl5110delta.pod for more detailed information.
+to pod/perl5130delta.pod for more detailed information.
 
 B<WARNING:> This version is not binary compatible with prior releases of Perl.
 If you have built extensions (i.e. modules that include C code)
@@ -93,7 +93,7 @@ The standard extensions supplied with Perl will be handled automatically.
 
 On a related issue, old modules may possibly be affected by the changes
 in the Perl language in the current release.  Please see
-pod/perl5110delta.pod for a description of what's changed.  See your
+pod/perl5130delta.pod for a description of what's changed.  See your
 installed copy of the perllocal.pod file for a (possibly incomplete)
 list of locally installed modules.  Also see CPAN::autobundle for one
 way to make a "bundle" of your currently installed modules.
@@ -244,7 +244,7 @@ Perl used to have two different internal threads implementations.  The current
 model (available internally since 5.6, and as a user-level module since 5.8) is
 called interpreter-based implementation (ithreads), with one interpreter per
 thread, and explicit sharing of data.  The (deprecated) 5.005 version
-(5005threads) has been removed for release 5.10.
+(5005threads) was removed for release 5.10.
 
 The 'threads' module is for use with the ithreads implementation.  The
 'Thread' module emulates the old 5005threads interface on top of the current
@@ -310,7 +310,7 @@ Natively 64-bit systems need neither -Duse64bitint nor -Duse64bitall.
 On these systems, it might be the default compilation mode, and there
 is currently no guarantee that passing no use64bitall option to the
 Configure process will build a 32bit perl. Implementing -Duse32bit*
-options is planned for perl 5.12.
+options is planned for a future release of perl.
 
 =head3 Long doubles
 
@@ -524,9 +524,9 @@ The directories set up by Configure fall into three broad categories.
 
 =item Directories for the perl distribution
 
-By default, Configure will use the following directories for 5.10.0.
+By default, Configure will use the following directories for 5.13.0.
 $version is the full perl version number, including subversion, e.g.
-5.10.0 or 5.9.5, and $archname is a string like sun4-sunos,
+5.13.0 or 5.9.5, and $archname is a string like sun4-sunos,
 determined by Configure.  The full definitions of all Configure
 variables are in the file Porting/Glossary.
 
@@ -772,6 +772,25 @@ simply do:
 
 =back
 
+=head2 Relocatable @INC
+
+To create a relocatable perl tree, use the following command line:
+
+    sh Configure -Duserelocatableinc
+
+Then the paths in @INC (and everything else in %Config) can be
+optionally located via the path of the perl executable.
+
+That means that, if the string ".../" is found at the start of any
+path, it's substituted with the directory of $^X. So, the relocation
+can be configured on a per-directory basis, although the default with
+"-Duserelocatableinc" is that everything is relocated. The initial
+install is done to the original configured prefix.
+
+This option is not compatible with the building of a shared libperl
+("-Duseshrplib"), because in that case perl is linked with an hard-coded
+rpath that points at the libperl.so, that cannot be relocated.
+
 =head2 Site-wide Policy settings
 
 After Configure runs, it stores a number of common site-wide "policy"
@@ -890,6 +909,22 @@ Removes -g from optimize, and -DDEBUGGING from ccflags.
 If you are using a shared libperl, see the warnings about multiple
 versions of perl under L<Building a shared Perl library>.
 
+Note that a perl built with -DDEBUGGING will be bigger and will run more
+slowly than a standard perl.
+
+=head2 DTrace support
+
+On platforms where DTrace is available, it may be enabled by 
+using the -Dusedtrace option to Configure. DTrace probes are available for
+subroutine entry (sub-entry) and subroutine exit (sub-exit). Here's a
+simple D script that uses them:
+
+  perl$target:::sub-entry, perl$target:::sub-return {
+    printf("%s %s (%s:%d)\n", probename == "sub-entry" ? "->" : "<-",
+              copyinstr(arg0), copyinstr(arg1), arg2);
+  }
+
+
 =head2 Extensions
 
 Perl ships with a number of standard extensions.  These are contained
@@ -901,7 +936,8 @@ only if it is able to find the gdbm library.
 
 To disable certain extensions so that they are not built, use the
 -Dnoextensions=... and -Donlyextensions=... options.  They both accept
-a space-separated list of extensions.  The extensions listed in
+a space-separated list of extensions, such as C<IPC/SysV>. The extensions
+listed in
 C<noextensions> are removed from the list of extensions to build, while
 the C<onlyextensions> is rather more severe and builds only the listed
 extensions.  The latter should be used with extreme caution since
@@ -1251,7 +1287,7 @@ various other operating systems.
 
 If you plan to port Perl to a new architecture, study carefully the
 section titled "Philosophical Issues in Patching and Porting Perl"
-in the file Porting/pumpkin.pod and the file Porting/patching.pod.
+in the file Porting/pumpkin.pod and the file pod/perlrepository.pod.
 Study also how other non-UNIX ports have solved problems.
 
 =back
@@ -1284,25 +1320,9 @@ process or the Perl build process will not help you with these.
 
 =head2 suidperl
 
-suidperl is an optional component, which is normally neither built
-nor installed by default.  From perlfaq1:
-
-	On some systems, setuid and setgid scripts (scripts written
-        in the C shell, Bourne shell, or Perl, for example, with the
-        set user or group ID permissions enabled) are insecure due to
-        a race condition in the kernel. For those systems, Perl versions
-        5 and 4 attempt to work around this vulnerability with an optional
-        component, a special program named suidperl, also known as sperl.
-        This program attempts to emulate the set-user-ID and set-group-ID
-        features of the kernel.
-
-Because of the buggy history of suidperl, and the difficulty
-of properly security auditing as large and complex piece of
-software as Perl, we cannot recommend using suidperl and the feature
-should be considered deprecated.
-
-Instead, use a tool specifically designed to handle changes in
-privileges, such as B<sudo>.
+suidperl was an optional component of earlier releases of perl. It is no
+longer available.  Instead, use a tool specifically designed to handle
+changes in privileges, such as B<sudo>.
 
 =head1 make depend
 
@@ -1369,6 +1389,18 @@ The latter is especially useful if you see something like this
 	perl: warning: Falling back to the standard locale ("C").
 
 at Perl startup.
+
+=item other environment variables
+
+Configure does not check for environment variables that can sometimes
+have a major influence on how perl is built or tested. For example,
+OBJECT_MODE on AIX determines the way the compiler and linker deal with
+their objects, but this is a variable that only influences build-time
+behaviour, and should not affect the perl scripts that are eventually
+executed by the perl binary. Other variables, like PERL_UNICODE,
+PERL5LIB, and PERL5OPT will influence the behaviour of the test suite.
+So if you are getting strange test failures, you may want to try
+retesting with the various PERL variables unset.
 
 =item varargs
 
@@ -1528,6 +1560,26 @@ specific rule.
 
 SCO prior to 3.2.4 may be missing dbmclose().  An upgrade to 3.2.4
 that includes libdbm.nfs (which includes dbmclose()) may be available.
+
+=item error: too few arguments to function 'dbmclose'
+
+Building ODBM_File on some (Open)SUSE distributions might run into this
+error, as the header file is broken. There are two ways to deal with this
+
+ 1. Disable the use of ODBM_FILE
+
+    Configure ... -Dnoextensions=ODBM_File
+
+ 2. Fix the header file, somewhat like this:
+
+    --- a/usr/include/dbm.h  2010-03-24 08:54:59.000000000 +0100
+    +++ b/usr/include/dbm.h  2010-03-24 08:55:15.000000000 +0100
+    @@ -59,4 +59,4 @@ extern datum  firstkey __P((void));
+
+     extern datum   nextkey __P((datum key));
+
+    -extern int     dbmclose __P((DBM *));
+    +extern int     dbmclose __P((void));
 
 =item Note (probably harmless): No library found for -lsomething
 
@@ -1808,7 +1860,7 @@ If make test bombs out, just cd to the t directory and run ./TEST
 by hand to see if it makes any difference.  If individual tests
 bomb, you can run them by hand, e.g.,
 
-	cd t ; ./perl -MTestInit op/groups.t
+	./perl -MTestInit t/op/groups.t
 
 Another way to get more detailed information about failed tests and
 individual subtests is to cd to the t directory and run
@@ -2234,7 +2286,7 @@ http://www.chiark.greenend.org.uk/~sgtatham/bugs.html
 
 =head1 Coexistence with earlier versions of perl 5
 
-Perl 5.10 is not binary compatible with earlier versions of Perl.
+Perl 5.12 is not binary compatible with earlier versions of Perl.
 In other words, you will have to recompile your XS modules.
 
 In general, you can usually safely upgrade from one version of Perl (e.g.
@@ -2308,9 +2360,9 @@ won't interfere with another version.  (The defaults guarantee this for
 libraries after 5.6.0, but not for executables. TODO?)  One convenient
 way to do this is by using a separate prefix for each version, such as
 
-	sh Configure -Dprefix=/opt/perl5.10.0
+	sh Configure -Dprefix=/opt/perl5.13.0
 
-and adding /opt/perl5.10.0/bin to the shell PATH variable.  Such users
+and adding /opt/perl5.13.0/bin to the shell PATH variable.  Such users
 may also wish to add a symbolic link /usr/local/bin/perl so that
 scripts can still start with #!/usr/local/bin/perl.
 
@@ -2323,13 +2375,13 @@ seriously consider using a separate directory, since development
 subversions may not have all the compatibility wrinkles ironed out
 yet.
 
-=head2 Upgrading from 5.8.x or earlier
+=head2 Upgrading from 5.11.0 or earlier
 
-B<Perl 5.10.0 is binary incompatible with Perl 5.8.x and any earlier
+B<Perl 5.13.0 is binary incompatible with Perl 5.11.1 and any earlier
 Perl release.>  Perl modules having binary parts
 (meaning that a C compiler is used) will have to be recompiled to be
-used with 5.10.0.  If you find you do need to rebuild an extension with
-5.10.0, you may safely do so without disturbing the older
+used with 5.13.0.  If you find you do need to rebuild an extension with
+5.13.0, you may safely do so without disturbing the older
 installations.  (See L<"Coexistence with earlier versions of perl 5">
 above.)
 

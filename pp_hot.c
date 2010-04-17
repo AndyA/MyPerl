@@ -52,6 +52,7 @@ PP(pp_nextstate)
     TAINT_NOT;		/* Each statement is presumed innocent */
     PL_stack_sp = PL_stack_base + cxstack[cxstack_ix].blk_oldsp;
     FREETMPS;
+    PERL_ASYNC_CHECK();
     return NORMAL;
 }
 
@@ -98,6 +99,7 @@ PP(pp_gv)
 PP(pp_and)
 {
     dVAR; dSP;
+    PERL_ASYNC_CHECK();
     if (!SvTRUE(TOPs))
 	RETURN;
     else {
@@ -157,7 +159,7 @@ PP(pp_sassign)
 	    /* We've been returned a constant rather than a full subroutine,
 	       but they expect a subroutine reference to apply.  */
 	    if (SvROK(cv)) {
-		ENTER;
+		ENTER_with_name("sassign_coderef");
 		SvREFCNT_inc_void(SvRV(cv));
 		/* newCONSTSUB takes a reference count on the passed in SV
 		   from us.  We set the name to NULL, otherwise we get into
@@ -167,7 +169,7 @@ PP(pp_sassign)
 		SvRV_set(left, MUTABLE_SV(newCONSTSUB(GvSTASH(right), NULL,
 						      SvRV(cv))));
 		SvREFCNT_dec(cv);
-		LEAVE;
+		LEAVE_with_name("sassign_coderef");
 	    } else {
 		/* What can happen for the corner case *{"BONK"} = \&{"BONK"};
 		   is that
@@ -203,6 +205,7 @@ PP(pp_sassign)
 PP(pp_cond_expr)
 {
     dVAR; dSP;
+    PERL_ASYNC_CHECK();
     if (SvTRUEx(POPs))
 	RETURNOP(cLOGOP->op_other);
     else
@@ -416,6 +419,7 @@ PP(pp_preinc)
 PP(pp_or)
 {
     dVAR; dSP;
+    PERL_ASYNC_CHECK();
     if (SvTRUE(TOPs))
 	RETURN;
     else {
@@ -434,6 +438,7 @@ PP(pp_defined)
     const bool is_dor = (op_type == OP_DOR || op_type == OP_DORASSIGN);
 
     if (is_dor) {
+	PERL_ASYNC_CHECK();
         sv = TOPs;
         if (!sv || !SvANY(sv)) {
 	    if (op_type == OP_DOR)
@@ -658,7 +663,7 @@ PP(pp_aelemfast)
     SV *sv = (svp ? *svp : &PL_sv_undef);
     EXTEND(SP, 1);
     if (!lval && SvGMAGICAL(sv))	/* see note in pp_helem() */
-	sv = sv_mortalcopy(sv);
+	mg_get(sv);
     PUSHs(sv);
     RETURN;
 }
@@ -719,14 +724,14 @@ PP(pp_print)
 	PUSHMARK(MARK - 1);
 	*MARK = SvTIED_obj(MUTABLE_SV(io), mg);
 	PUTBACK;
-	ENTER;
+	ENTER_with_name("call_PRINT");
 	if( PL_op->op_type == OP_SAY ) {
 		/* local $\ = "\n" */
 		SAVEGENERICSV(PL_ors_sv);
 		PL_ors_sv = newSVpvs("\n");
 	}
 	call_method("PRINT", G_SCALAR);
-	LEAVE;
+	LEAVE_with_name("call_PRINT");
 	SPAGAIN;
 	MARK = ORIGMARK + 1;
 	*MARK = *SP;
@@ -734,7 +739,7 @@ PP(pp_print)
 	RETURN;
     }
     if (!(io = GvIO(gv))) {
-        if ((GvEGV(gv)) && (io = GvIO(GvEGV(gv)))
+        if ((GvEGVx(gv)) && (io = GvIO(GvEGV(gv)))
 	    && (mg = SvTIED_mg((const SV *)io, PERL_MAGIC_tiedscalar)))
             goto had_magic;
 	if (ckWARN2(WARN_UNOPENED,WARN_CLOSED))
@@ -893,7 +898,7 @@ PP(pp_rv2av)
 		SV ** const svp = av_fetch(av, i, FALSE);
 		/* See note in pp_helem, and bug id #27839 */
 		SP[i+1] = svp
-		    ? SvGMAGICAL(*svp) ? sv_mortalcopy(*svp) : *svp
+		    ? SvGMAGICAL(*svp) ? (mg_get(*svp), *svp) : *svp
 		    : &PL_sv_undef;
 	    }
 	}
@@ -1209,10 +1214,13 @@ PP(pp_qr)
     SV * const rv = sv_newmortal();
 
     SvUPGRADE(rv, SVt_IV);
-    /* This RV is about to own a reference to the regexp. (In addition to the
-       reference already owned by the PMOP.  */
-    ReREFCNT_inc(rx);
-    SvRV_set(rv, MUTABLE_SV(rx));
+    /* For a subroutine describing itself as "This is a hacky workaround" I'm
+       loathe to use it here, but it seems to be the right fix. Or close.
+       The key part appears to be that it's essential for pp_qr to return a new
+       object (SV), which implies that there needs to be an effective way to
+       generate a new SV from the existing SV that is pre-compiled in the
+       optree.  */
+    SvRV_set(rv, MUTABLE_SV(reg_temp_copy(NULL, rx)));
     SvROK_on(rv);
 
     if (pkg) {
@@ -1258,7 +1266,11 @@ PP(pp_match)
     }
 
     PUTBACK;				/* EVAL blocks need stack_sp. */
-    s = SvPV_const(TARG, len);
+    /* Skip get-magic if this is a qr// clone, because regcomp has
+       already done it. */
+    s = ((struct regexp *)SvANY(rx))->mother_re
+	 ? SvPV_nomg_const(TARG, len)
+	 : SvPV_const(TARG, len);
     if (!s)
 	DIE(aTHX_ "panic: pp_match");
     strend = s + len;
@@ -1554,9 +1566,9 @@ Perl_do_readline(pTHX)
 	    PUSHMARK(SP);
 	    XPUSHs(SvTIED_obj(MUTABLE_SV(io), mg));
 	    PUTBACK;
-	    ENTER;
+	    ENTER_with_name("call_READLINE");
 	    call_method("READLINE", gimme);
-	    LEAVE;
+	    LEAVE_with_name("call_READLINE");
 	    SPAGAIN;
 	    if (gimme == G_SCALAR) {
 		SV* const result = POPs;
@@ -1675,11 +1687,11 @@ Perl_do_readline(pTHX)
 		(void)do_close(PL_last_in_gv, FALSE);
 	    }
 	    else if (type == OP_GLOB) {
-		if (!do_close(PL_last_in_gv, FALSE) && ckWARN(WARN_GLOB)) {
-		    Perl_warner(aTHX_ packWARN(WARN_GLOB),
-			   "glob failed (child exited with status %d%s)",
-			   (int)(STATUS_CURRENT >> 8),
-			   (STATUS_CURRENT & 0x80) ? ", core dumped" : "");
+		if (!do_close(PL_last_in_gv, FALSE)) {
+		    Perl_ck_warner(aTHX_ packWARN(WARN_GLOB),
+				   "glob failed (child exited with status %d%s)",
+				   (int)(STATUS_CURRENT >> 8),
+				   (STATUS_CURRENT & 0x80) ? ", core dumped" : "");
 		}
 	    }
 	    if (gimme == G_SCALAR) {
@@ -1764,7 +1776,7 @@ PP(pp_enter)
 	    gimme = G_SCALAR;
     }
 
-    ENTER;
+    ENTER_with_name("block");
 
     SAVETMPS;
     PUSHBLOCK(cx, CXt_BLOCK, SP);
@@ -1823,29 +1835,30 @@ PP(pp_helem)
 	if (localizing) {
 	    if (HvNAME_get(hv) && isGV(*svp))
 		save_gp(MUTABLE_GV(*svp), !(PL_op->op_flags & OPf_SPECIAL));
-	    else {
-		if (!preeminent) {
-		    STRLEN keylen;
-		    const char * const key = SvPV_const(keysv, keylen);
-		    SAVEDELETE(hv, savepvn(key,keylen),
-			       SvUTF8(keysv) ? -(I32)keylen : (I32)keylen);
-		} else
-		    save_helem_flags(hv, keysv, svp,
-				     (PL_op->op_flags & OPf_SPECIAL) ? 0 : SAVEf_SETMAGIC);
-            }
+	    else if (preeminent)
+		save_helem_flags(hv, keysv, svp,
+		     (PL_op->op_flags & OPf_SPECIAL) ? 0 : SAVEf_SETMAGIC);
+	    else
+		SAVEHDELETE(hv, keysv);
 	}
 	else if (PL_op->op_private & OPpDEREF)
 	    vivify_ref(*svp, PL_op->op_private & OPpDEREF);
     }
     sv = (svp ? *svp : &PL_sv_undef);
-    /* This makes C<local $tied{foo} = $tied{foo}> possible.
-     * Pushing the magical RHS on to the stack is useless, since
-     * that magic is soon destined to be misled by the local(),
-     * and thus the later pp_sassign() will fail to mg_get() the
-     * old value.  This should also cure problems with delayed
-     * mg_get()s.  GSAR 98-07-03 */
+    /* Originally this did a conditional C<sv = sv_mortalcopy(sv)>; this
+     * was to make C<local $tied{foo} = $tied{foo}> possible.
+     * However, it seems no longer to be needed for that purpose, and
+     * introduced a new bug: stuff like C<while ($hash{taintedval} =~ /.../g>
+     * would loop endlessly since the pos magic is getting set on the
+     * mortal copy and lost. However, the copy has the effect of
+     * triggering the get magic, and losing it altogether made things like
+     * c<$tied{foo};> in void context no longer do get magic, which some
+     * code relied on. Also, delayed triggering of magic on @+ and friends
+     * meant the original regex may be out of scope by now. So as a
+     * compromise, do the get magic here. (The MGf_GSKIP flag will stop it
+     * being called too many times). */
     if (!lval && SvGMAGICAL(sv))
-	sv = sv_mortalcopy(sv);
+	mg_get(sv);
     PUSHs(sv);
     RETURN;
 }
@@ -1896,7 +1909,7 @@ PP(pp_leave)
     }
     PL_curpm = newpm;	/* Don't pop $1 et al till now */
 
-    LEAVE;
+    LEAVE_with_name("block");
 
     RETURN;
 }
@@ -2068,9 +2081,11 @@ PP(pp_subst)
     bool is_cow;
 #endif
     SV *nsv = NULL;
-
     /* known replacement string? */
     register SV *dstr = (pm->op_pmflags & PMf_CONST) ? POPs : NULL;
+
+    PERL_ASYNC_CHECK();
+
     if (PL_op->op_flags & OPf_STACKED)
 	TARG = POPs;
     else if (PL_op->op_private & OPpTARGET_MY)
@@ -2383,14 +2398,14 @@ PP(pp_grepwhile)
     if (SvTRUEx(POPs))
 	PL_stack_base[PL_markstack_ptr[-1]++] = PL_stack_base[*PL_markstack_ptr];
     ++*PL_markstack_ptr;
-    LEAVE;					/* exit inner scope */
+    LEAVE_with_name("grep_item");					/* exit inner scope */
 
     /* All done yet? */
     if (PL_stack_base + *PL_markstack_ptr > SP) {
 	I32 items;
 	const I32 gimme = GIMME_V;
 
-	LEAVE;					/* exit outer scope */
+	LEAVE_with_name("grep");					/* exit outer scope */
 	(void)POPMARK;				/* pop src */
 	items = --*PL_markstack_ptr - PL_markstack_ptr[-1];
 	(void)POPMARK;				/* pop dst */
@@ -2413,7 +2428,7 @@ PP(pp_grepwhile)
     else {
 	SV *src;
 
-	ENTER;					/* enter inner scope */
+	ENTER_with_name("grep_item");					/* enter inner scope */
 	SAVEVPTR(PL_curpm);
 
 	src = PL_stack_base[*PL_markstack_ptr];
@@ -2705,7 +2720,7 @@ PP(pp_entersub)
 	    if (!sym)
 		DIE(aTHX_ PL_no_usym, "a subroutine");
 	    if (PL_op->op_private & HINT_STRICT_REFS)
-		DIE(aTHX_ PL_no_symref, sym, "a subroutine");
+		DIE(aTHX_ "Can't use string (\"%.32s\"%s) as a subroutine ref while \"strict refs\" in use", sym, len>32 ? "..." : "");
 	    cv = get_cvn_flags(sym, len, GV_ADD|SvUTF8(sv));
 	    break;
 	}
@@ -2770,7 +2785,7 @@ try_autoload:
 	     PL_curcopdb = PL_curcop;
          if (CvLVALUE(cv)) {
              /* check for lsub that handles lvalue subroutines */
-	     cv = GvCV(gv_HVadd(gv_fetchpv("DB::lsub", GV_ADDMULTI, SVt_PVHV)));
+	     cv = GvCV(gv_HVadd(gv_fetchpvs("DB::lsub", GV_ADDMULTI, SVt_PVHV)));
              /* if lsub not found then fall back to DB::sub */
 	     if (!cv) cv = GvCV(PL_DBsub);
          } else {
@@ -2874,8 +2889,10 @@ try_autoload:
 	    PL_curcopdb = NULL;
 	}
 	/* Do we need to open block here? XXXX */
-	if (CvXSUB(cv)) /* XXX this is supposed to be true */
-	    (void)(*CvXSUB(cv))(aTHX_ cv);
+
+	/* CvXSUB(cv) must not be NULL because newXS() refuses NULL xsub address */
+	assert(CvXSUB(cv));
+	CALL_FPTR(CvXSUB(cv))(aTHX_ cv);
 
 	/* Enforce some sanity in scalar context. */
 	if (gimme == G_SCALAR && ++markix != PL_stack_sp - PL_stack_base ) {
@@ -2979,7 +2996,7 @@ PP(pp_aelem)
     }
     sv = (svp ? *svp : &PL_sv_undef);
     if (!lval && SvGMAGICAL(sv))	/* see note in pp_helem() */
-	sv = sv_mortalcopy(sv);
+	mg_get(sv);
     PUSHs(sv);
     RETURN;
 }

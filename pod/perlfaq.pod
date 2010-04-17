@@ -23,12 +23,12 @@ The perlfaq is an evolving document and you can read the latest version
 at http://faq.perl.org/ . The perlfaq-workers periodically post extracts
 of the latest perlfaq to comp.lang.perl.misc.
 
-You can view the source tree at
-https://svn.perl.org/modules/perlfaq/trunk/ (which is outside of the
-main Perl source tree).  The SVN repository notes all changes to the FAQ
-and holds the latest version of the working documents and may vary
-significantly from the version distributed with the latest version of
-Perl. Check the repository before sending your corrections.
+You can view the source tree at https://github.com/briandfoy/perlfaq
+(which is outside of the main Perl source tree). The git repository
+notes all changes to the FAQ and holds the latest version of the
+working documents and may vary significantly from the version
+distributed with the latest version of Perl. Check the repository
+before sending your corrections.
 
 =head2 How to contribute to the perlfaq
 
@@ -42,6 +42,12 @@ The perlfaq server posts extracts of the perlfaq to that newsgroup every
 6 hours (or so), and the community of volunteers reviews and updates the
 answers. If you'd like to help review and update the answers, check out
 comp.lang.perl.misc.
+
+You can also fork the git repository for the perlfaq and send a pull
+request so the main repository can pull your changes. The repository
+is at:
+
+       https://github.com/briandfoy/perlfaq
 
 =head2 What will happen if you mail your Perl programming problems to the authors?
 
@@ -60,14 +66,14 @@ it, try the resources in L<perlfaq2>.
 =head1 CREDITS
 
 Tom Christiansen wrote the original perlfaq then expanded it with the
-help of Nat Torkington.  The perlfaq-workers maintain current document
-and the denizens of comp.lang.perl.misc regularly review and update the
+help of Nat Torkington. The perlfaq-workers maintain current document
+and the dezinens of comp.lang.perl.misc regularly review and update the
 FAQ. Several people have contributed answers, corrections, and comments,
 and the perlfaq notes those contributions wherever appropriate.
 
 =head1 AUTHOR AND COPYRIGHT
 
-Tom Christiansen wrote the original version of this document.
+Tom Christainsen wrote the original version of this document.
 brian d foy C<< <bdfoy@cpan.org> >> wrote this version. See the
 individual perlfaq documents for additional copyright information.
 
@@ -458,7 +464,7 @@ How do I find yesterday's date?
 
 =item *
 
-Does Perl have a Year 2000 problem? Is Perl Y2K compliant?
+Does Perl have a Year 2000 or 2038 problem? Is Perl Y2K compliant?
 
 =item *
 
@@ -610,6 +616,10 @@ How do I process an entire hash?
 
 =item *
 
+How do I merge two hashes?
+
+=item *
+
 What happens if I add or remove keys from a hash while iterating over it?
 
 =item *
@@ -712,6 +722,10 @@ How do I change, delete, or insert a line in a file, or append to the beginning 
 =item *
 
 How do I count the number of lines in a file?
+
+=item *
+
+How do I delete the last N lines from a file?
 
 =item *
 
@@ -857,6 +871,18 @@ How do I select a random line from a file?
 
 Why do I get weird spaces when I print an array of lines?
 
+=item *
+
+How do I traverse a directory tree?
+
+=item *
+
+How do I delete a directory tree?
+
+=item *
+
+How do I copy an entire directory?
+
 =back
 
 
@@ -877,6 +903,10 @@ I'm having trouble matching over more than one line.  What's wrong?
 =item *
 
 How can I pull out lines between two patterns that are themselves on different lines?
+
+=item *
+
+How do I match XML, HTML, or other nasty, ugly things with a regex?
 
 =item *
 
@@ -1069,11 +1099,11 @@ Why can't a method included in this same file be found?
 
 =item *
 
-How can I find out my current package?
+How can I find out my current or calling package?
 
 =item *
 
-How can I comment out a large block of perl code?
+How can I comment out a large block of Perl code?
 
 =item *
 

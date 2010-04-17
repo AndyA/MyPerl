@@ -14,7 +14,7 @@ use Test::More;
 
 my $TB = Test::More->builder;
 
-plan tests => 459;
+plan tests => 463;
 
 # We're going to override rename() later on but Perl has to see an override
 # at compile time to honor it.
@@ -223,6 +223,18 @@ for my $cross_partition_test (0..1) {
 
   unlink "file-$$" or die $!;
   unlink "copy-$$" or die $!;
+
+  # RT #73714 copy to file with leading whitespace failed
+
+  TODO: {
+  local $TODO = 'spaces in filenames require DECC$EFS_CHARSET enabled' if $^O eq 'VMS';
+  open(F, ">file-$$") or die $!;
+  close F;
+  copy "file-$$", " copy-$$";
+  ok -e " copy-$$", "copy with leading whitespace";
+  unlink "file-$$" or die "unlink: $!";
+  unlink " copy-$$" or die "unlink: $!";
+  }
 }
 
 
@@ -239,6 +251,9 @@ SKIP: {
 
     my $skips = @tests * 6 * 8;
 
+    # TODO - make this skip fire if we're on a nosuid filesystem rather than guessing by OS
+    skip "OpenBSD filesystems default to nosuid breaking these tests", $skips
+          if $^O eq 'openbsd';
     skip "-- Copy preserves RMS defaults, not POSIX permissions.", $skips
           if $^O eq 'VMS';
     skip "Copy doesn't set file permissions correctly on Win32.",  $skips
@@ -433,6 +448,19 @@ SKIP: {
         my @array  = $sub->( $NO_SUCH_FILE, $NO_SUCH_OTHER_FILE );
         is_deeply( \@array, EXPECTED_LIST, "$name in list context");
     }
+}
+
+SKIP: {
+    skip("fork required to test pipe copying", 2)
+        if (!$Config{'d_fork'});
+
+    open(my $IN, "-|") || exec $^X, '-e', 'print "Hello, world!\n"';
+    open(my $OUT, "|-") || exec $^X, '-ne', 'exit(/Hello/ ? 55 : 0)';
+
+    ok(copy($IN, $OUT), "copy pipe to another");
+    close($OUT);
+    is($? >> 8, 55, "content copied through the pipes");
+    close($IN);
 }
 
 END {

@@ -41,6 +41,8 @@ my @patches;
 while (<PATCH_LEVEL>) {
     last if /^\s*}/;
     next if /^\s*#/;  # preprocessor stuff
+    next if /PERL_GIT_UNPUSHED_COMMITS/;    # XXX expand instead
+    next if /"uncommitted-changes"/;        # XXX determine if active instead
     chomp;
     s/^\s+,?\s*"?//;
     s/"?\s*,?$//;
@@ -458,7 +460,7 @@ EOF
 	# Try and guess return address
 	my $guess;
 
-	$guess = $ENV{'REPLY-TO'} || $ENV{'REPLYTO'} || '';
+	$guess = $ENV{'REPLY-TO'} || $ENV{'REPLYTO'} || $ENV{'EMAIL'} || '';
         if ($Is_MacOS) {
             require Mac::InternetConfig;
             $guess = $Mac::InternetConfig::InternetConfig{
@@ -869,7 +871,7 @@ sub NowWhat {
 You have finished composing your message. At this point, you have 
 a few options. You can:
 
-    * [Se]end the message to $address$andcc, 
+    * [Se]nd the message to $address$andcc, 
     * [D]isplay the message on the screen,
     * [R]e-edit the message
     * Display or change the message's [su]bject
@@ -1132,7 +1134,7 @@ sub _send_message_mailsend {
     open(REP, "<$filename") or die "Couldn't open '$filename': $!\n";
     while (<REP>) { print $fh $_ }
     close(REP) or die "Error closing $filename: $!";
-    $fh->close;
+    $fh->close or die "Error sending mail: $!";
 
     print "\nMessage sent.\n";
 }
@@ -1157,9 +1159,15 @@ sub _probe_for_sendmail {
 sub _send_message_sendmail {
     my $sendmail = _probe_for_sendmail();
     unless ($sendmail) {
-        paraprint(<<"EOF"), die "\n";
+        my $message_start = !$Is_Linux && !$Is_OpenBSD ? <<'EOT' : <<'EOT';
 It appears that there is no program which looks like "sendmail" on
 your system and that the Mail::Send library from CPAN isn't available.
+EOT
+It appears that there is no program which looks like "sendmail" on
+your system.
+EOT
+        paraprint(<<"EOF"), die "\n";
+$message_start
 Because of this, there's no easy way to automatically send your
 message.
 

@@ -894,6 +894,28 @@ sed <<!GROK!THIS! >$CONFIG_H -e 's!^#undef\(.*/\)\*!/\*#define\1 \*!' -e 's!^#un
  */
 #$i_vfork I_VFORK	/**/
 
+/* CAN_VAPROTO:
+ *	This variable is defined on systems supporting prototype declaration
+ *	of functions with a variable number of arguments.
+ */
+/* _V:
+ *	This macro is used to declare function parameters in prototypes for
+ *	functions with a variable number of parameters. Use double parentheses.
+ *	For example:
+ *
+ *		int printf _V((char *fmt, ...));
+ *
+ *	Remember to use the plain simple _() macro when declaring a function
+ *	with no variable number of arguments, since it might be possible to
+ *	have a non-effect _V() macro and still get prototypes via _().
+ */
+#$vaproto CAN_VAPROTO	/**/
+#ifdef CAN_VAPROTO
+#define	_V(args) args
+#else
+#define	_V(args) ()
+#endif
+
 /* INTSIZE:
  *	This symbol contains the value of sizeof(int) so that the C
  *	preprocessor can make decisions based on it.
@@ -1162,6 +1184,26 @@ sed <<!GROK!THIS! >$CONFIG_H -e 's!^#undef\(.*/\)\*!/\*#define\1 \*!' -e 's!^#un
  */
 #$d_ctime_r HAS_CTIME_R	   /**/
 #define CTIME_R_PROTO $ctime_r_proto	   /**/
+
+/* SETUID_SCRIPTS_ARE_SECURE_NOW:
+ *	This symbol, if defined, indicates that the bug that prevents
+ *	setuid scripts from being secure is not present in this kernel.
+ */
+/* DOSUID:
+ *	This symbol, if defined, indicates that the C program should
+ *	check the script that it is executing for setuid/setgid bits, and
+ *	attempt to emulate setuid/setgid on systems that have disabled
+ *	setuid #! scripts because the kernel can't do it securely.
+ *	It is up to the package designer to make sure that this emulation
+ *	is done securely.  Among other things, it should do an fstat on
+ *	the script it just opened to make sure it really is a setuid/setgid
+ *	script, it should make sure the arguments passed correspond exactly
+ *	to the argument on the #! line, and it should not trust any
+ *	subprocesses to which it must pass the filename rather than the
+ *	file descriptor of the script to be executed.
+ */
+#$d_suidsafe SETUID_SCRIPTS_ARE_SECURE_NOW	/**/
+#$d_dosuid DOSUID		/**/
 
 /* HAS_DRAND48_R:
  *	This symbol, if defined, indicates that the drand48_r routine
@@ -2943,6 +2985,12 @@ sed <<!GROK!THIS! >$CONFIG_H -e 's!^#undef\(.*/\)\*!/\*#define\1 \*!' -e 's!^#un
 #define BYTEORDER 0x$byteorder	/* large digits for MSB */
 #endif /* NeXT */
 
+/* CHARBITS:
+ *	This symbol contains the size of a char, so that the C preprocessor
+ *	can make decisions based on it.
+ */
+#define CHARBITS $charbits		/**/
+
 /* CASTI32:
  *	This symbol is defined if the C compiler can cast negative
  *	or large floating point numbers to 32-bit ints.
@@ -3280,26 +3328,6 @@ sed <<!GROK!THIS! >$CONFIG_H -e 's!^#undef\(.*/\)\*!/\*#define\1 \*!' -e 's!^#un
  *	EBCDIC encoding.
  */
 #$ebcdic	EBCDIC 		/**/
-
-/* SETUID_SCRIPTS_ARE_SECURE_NOW:
- *	This symbol, if defined, indicates that the bug that prevents
- *	setuid scripts from being secure is not present in this kernel.
- */
-/* DOSUID:
- *	This symbol, if defined, indicates that the C program should
- *	check the script that it is executing for setuid/setgid bits, and
- *	attempt to emulate setuid/setgid on systems that have disabled
- *	setuid #! scripts because the kernel can't do it securely.
- *	It is up to the package designer to make sure that this emulation
- *	is done securely.  Among other things, it should do an fstat on
- *	the script it just opened to make sure it really is a setuid/setgid
- *	script, it should make sure the arguments passed correspond exactly
- *	to the argument on the #! line, and it should not trust any
- *	subprocesses to which it must pass the filename rather than the
- *	file descriptor of the script to be executed.
- */
-#$d_suidsafe SETUID_SCRIPTS_ARE_SECURE_NOW	/**/
-#$d_dosuid DOSUID		/**/
 
 /* PERL_USE_DEVEL:
  *	This symbol, if defined, indicates that Perl was configured with
@@ -3778,6 +3806,17 @@ sed <<!GROK!THIS! >$CONFIG_H -e 's!^#undef\(.*/\)\*!/\*#define\1 \*!' -e 's!^#un
  *	This symbol will be defined if the C compiler supports off64_t.
  */
 #$d_off64_t	HAS_OFF64_T    		/**/
+
+/* HAS_PRCTL:
+ *	This symbol, if defined, indicates that the prctl routine is
+ *	available to set process title.
+ */
+/* HAS_PRCTL_SET_NAME:
+ *	This symbol, if defined, indicates that the prctl routine is
+ *	available to set process title and supports PR_SET_NAME.
+ */
+#$d_prctl HAS_PRCTL		/**/
+#$d_prctl_set_name HAS_PRCTL_SET_NAME		/**/
 
 /* HAS_PROCSELFEXE:
  *	This symbol is defined if PROCSELFEXE_PATH is a symlink

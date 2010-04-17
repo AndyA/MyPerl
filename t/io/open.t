@@ -9,9 +9,8 @@ BEGIN {
 $|  = 1;
 use warnings;
 use Config;
-$Is_MacOS = $^O eq 'MacOS';
 
-plan tests => 108;
+plan tests => 109;
 
 my $Perl = which_perl();
 
@@ -84,9 +83,7 @@ EOC
     is( scalar @rows, 2,                '       readline, list context' );
     ok( close($f),                      '       close' );
 }
-SKIP: {
-    skip "Output for |- doesn't go to shell on MacOS", 5 if $Is_MacOS;
-
+{
     ok( open(my $f, '|-', <<EOC),     'open |-' );
     $Perl -pe "s/^not //"
 EOC
@@ -177,9 +174,7 @@ EOC
     ok( close($f),                      '       close' );
 }
 
-SKIP: {
-    skip "Output for |- doesn't go to shell on MacOS", 5 if $Is_MacOS;
-
+{
     ok( open(local $f, '|-', <<EOC),  'open local $f, "|-", ...' );
     $Perl -pe "s/^not //"
 EOC
@@ -315,3 +310,17 @@ fresh_perl_is(
 
 eval { open $99, "foo" };
 like($@, qr/Modification of a read-only value attempted/, "readonly fh");
+
+# [perl#73626] mg_get wasn't run on the pipe arg
+
+{
+    package p73626;
+    sub TIESCALAR { bless {} }
+    sub FETCH { "$Perl -e 1"}
+
+    tie my $p, 'p73626';
+
+    package main;
+
+    ok( open(my $f, '-|', $p),     'open -| magic');
+}

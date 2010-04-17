@@ -810,6 +810,7 @@ exists		exists			ck_exists	is%	S
 rv2hv		hash dereference	ck_rvconst	dt1	
 helem		hash element		ck_null		s2	H S
 hslice		hash slice		ck_null		m@	H L
+boolkeys	boolkeys		ck_fun		%	H
 
 # Explosives and implosives.
 
@@ -1067,7 +1068,7 @@ hintseval	eval hints		ck_svconst	s$
 entereval	eval "string"		ck_eval		d%	S
 leaveeval	eval "string" exit	ck_null		1	S
 #evalonce	eval constant string	ck_null		d1	S
-entertry	eval {block}		ck_null		|	
+entertry	eval {block}		ck_eval		d%	
 leavetry	eval {block} exit	ck_null		@	
 
 # Get system info.

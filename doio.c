@@ -214,7 +214,8 @@ Perl_do_openn(pTHX_ GV *gv, register const char *oname, I32 len, int as_raw,
 		goto say_false;
 	    }
 #endif /* USE_STDIO */
-	    name = SvOK(*svp) ? savesvpv (*svp) : savepvs ("");
+	    name = (SvOK(*svp) || SvGMAGICAL(*svp)) ?
+			savesvpv (*svp) : savepvs ("");
 	    SAVEFREEPV(name);
 	}
 	else {
@@ -758,14 +759,13 @@ Perl_nextargv(pTHX_ register GV *gv)
 		fileuid = PL_statbuf.st_uid;
 		filegid = PL_statbuf.st_gid;
 		if (!S_ISREG(PL_filemode)) {
-		    if (ckWARN_d(WARN_INPLACE))	
-		        Perl_warner(aTHX_ packWARN(WARN_INPLACE),
-			    "Can't do inplace edit: %s is not a regular file",
-		            PL_oldname );
+		    Perl_ck_warner_d(aTHX_ packWARN(WARN_INPLACE),
+				     "Can't do inplace edit: %s is not a regular file",
+				     PL_oldname );
 		    do_close(gv,FALSE);
 		    continue;
 		}
-		if (*PL_inplace) {
+		if (*PL_inplace && strNE(PL_inplace, "*")) {
 		    const char *star = strchr(PL_inplace, '*');
 		    if (star) {
 			const char *begin = PL_inplace;
@@ -790,10 +790,9 @@ Perl_nextargv(pTHX_ register GV *gv)
 #endif
                       )
 		    {
-			if (ckWARN_d(WARN_INPLACE))	
-			    Perl_warner(aTHX_ packWARN(WARN_INPLACE),
-			      "Can't do inplace edit: %"SVf" would not be unique",
-			      SVfARG(sv));
+			Perl_ck_warner_d(aTHX_ packWARN(WARN_INPLACE),
+					 "Can't do inplace edit: %"SVf" would not be unique",
+					 SVfARG(sv));
 			do_close(gv,FALSE);
 			continue;
 		    }
@@ -801,10 +800,9 @@ Perl_nextargv(pTHX_ register GV *gv)
 #ifdef HAS_RENAME
 #if !defined(DOSISH) && !defined(__CYGWIN__) && !defined(EPOC)
 		    if (PerlLIO_rename(PL_oldname,SvPVX_const(sv)) < 0) {
-		        if (ckWARN_d(WARN_INPLACE))	
-			    Perl_warner(aTHX_ packWARN(WARN_INPLACE),
-			      "Can't rename %s to %"SVf": %s, skipping file",
-			      PL_oldname, SVfARG(sv), Strerror(errno));
+			Perl_ck_warner_d(aTHX_ packWARN(WARN_INPLACE),
+					 "Can't rename %s to %"SVf": %s, skipping file",
+					 PL_oldname, SVfARG(sv), Strerror(errno));
 			do_close(gv,FALSE);
 			continue;
 		    }
@@ -817,10 +815,9 @@ Perl_nextargv(pTHX_ register GV *gv)
 #else
 		    (void)UNLINK(SvPVX_const(sv));
 		    if (link(PL_oldname,SvPVX_const(sv)) < 0) {
-		        if (ckWARN_d(WARN_INPLACE))	
-			    Perl_warner(aTHX_ packWARN(WARN_INPLACE),
-			      "Can't rename %s to %"SVf": %s, skipping file",
-			      PL_oldname, SVfARG(sv), Strerror(errno) );
+			Perl_ck_warner_d(aTHX_ packWARN(WARN_INPLACE),
+					 "Can't rename %s to %"SVf": %s, skipping file",
+					 PL_oldname, SVfARG(sv), Strerror(errno) );
 			do_close(gv,FALSE);
 			continue;
 		    }
@@ -831,10 +828,9 @@ Perl_nextargv(pTHX_ register GV *gv)
 #if !defined(DOSISH) && !defined(AMIGAOS)
 #  ifndef VMS  /* Don't delete; use automatic file versioning */
 		    if (UNLINK(PL_oldname) < 0) {
-		        if (ckWARN_d(WARN_INPLACE))	
-			    Perl_warner(aTHX_ packWARN(WARN_INPLACE),
-			      "Can't remove %s: %s, skipping file",
-			      PL_oldname, Strerror(errno) );
+			Perl_ck_warner_d(aTHX_ packWARN(WARN_INPLACE),
+					 "Can't remove %s: %s, skipping file",
+					 PL_oldname, Strerror(errno) );
 			do_close(gv,FALSE);
 			continue;
 		    }
@@ -854,9 +850,8 @@ Perl_nextargv(pTHX_ register GV *gv)
 				   O_WRONLY|O_CREAT|OPEN_EXCL,0600,
 #endif
 				   NULL, NULL, 0)) {
-		    if (ckWARN_d(WARN_INPLACE))	
-		        Perl_warner(aTHX_ packWARN(WARN_INPLACE), "Can't do inplace edit on %s: %s",
-		          PL_oldname, Strerror(errno) );
+		    Perl_ck_warner_d(aTHX_ packWARN(WARN_INPLACE), "Can't do inplace edit on %s: %s",
+				     PL_oldname, Strerror(errno) );
 		    do_close(gv,FALSE);
 		    continue;
 		}
@@ -1245,10 +1240,8 @@ Perl_do_print(pTHX_ register SV *sv, PerlIO *fp)
 	    }
 	    else {
 		assert((char *)result == tmps);
-		if (ckWARN_d(WARN_UTF8)) {
-		    Perl_warner(aTHX_ packWARN(WARN_UTF8),
-				"Wide character in print");
-		}
+		Perl_ck_warner_d(aTHX_ packWARN(WARN_UTF8),
+				 "Wide character in print");
 	    }
 	}
 	/* To detect whether the process is about to overstep its
@@ -1726,8 +1719,11 @@ nothing in the core.
 	     * CRTL's emulation of Unix-style signals and kill()
 	     */
 	    while (++mark <= sp) {
-		I32 proc = SvIV(*mark);
+		I32 proc;
 		register unsigned long int __vmssts;
+		if (!(SvIOK(*mark) || SvNOK(*mark) || looks_like_number(*mark)))
+		    Perl_croak(aTHX_ "Can't kill a non-numeric process ID");
+		proc = SvIV(*mark);
 		APPLY_TAINT_PROPER();
 		if (!((__vmssts = sys$delprc(&proc,0)) & 1)) {
 		    tot--;
@@ -1750,7 +1746,10 @@ nothing in the core.
 	if (val < 0) {
 	    val = -val;
 	    while (++mark <= sp) {
-		const I32 proc = SvIV(*mark);
+		I32 proc;
+		if (!(SvIOK(*mark) || SvNOK(*mark) || looks_like_number(*mark)))
+		    Perl_croak(aTHX_ "Can't kill a non-numeric process ID");
+		proc = SvIV(*mark);
 		APPLY_TAINT_PROPER();
 #ifdef HAS_KILLPG
 		if (PerlProc_killpg(proc,val))	/* BSD */
@@ -1762,7 +1761,10 @@ nothing in the core.
 	}
 	else {
 	    while (++mark <= sp) {
-		const I32 proc = SvIV(*mark);
+		I32 proc;
+		if (!(SvIOK(*mark) || SvNOK(*mark) || looks_like_number(*mark)))
+		    Perl_croak(aTHX_ "Can't kill a non-numeric process ID");
+		proc = SvIV(*mark);
 		APPLY_TAINT_PROPER();
 		if (PerlProc_kill(proc, val))
 		    tot--;
@@ -1917,7 +1919,11 @@ Perl_cando(pTHX_ Mode_t mode, bool effective, register const Stat_t *statbufp)
      return (mode & statbufp->st_mode) ? TRUE : FALSE;
 
 #else /* ! DOSISH */
+# ifdef __CYGWIN__
+    if (ingroup(544,effective)) {     /* member of Administrators */
+# else
     if ((effective ? PL_euid : PL_uid) == 0) {	/* root is special */
+# endif
 	if (mode == S_IXUSR) {
 	    if (statbufp->st_mode & 0111 || S_ISDIR(statbufp->st_mode))
 		return TRUE;

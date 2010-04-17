@@ -103,10 +103,10 @@ typedef struct hek HEK;
 
 #define _SV_HEAD_UNION \
     union {				\
+	char*   svu_pv;		/* pointer to malloced string */	\
 	IV      svu_iv;			\
 	UV      svu_uv;			\
 	SV*     svu_rv;		/* pointer to another SV */		\
-	char*   svu_pv;		/* pointer to malloced string */	\
 	SV**    svu_array;		\
 	HE**	svu_hash;		\
 	GP*	svu_gp;			\
@@ -398,13 +398,10 @@ perform the upgrade if necessary.  See C<svtype>.
 /* RV upwards. However, SVf_ROK and SVp_IOK are exclusive  */
 #define SVprv_WEAKREF   0x80000000  /* Weak reference */
 
-#define _XPV_ALLOCATED_HEAD						\
-    STRLEN	xpv_cur;	/* length of svu_pv as a C string */    \
-    STRLEN	xpv_len 	/* allocated size */
-
 #define _XPV_HEAD	\
     union _xnvu xnv_u;	\
-    _XPV_ALLOCATED_HEAD
+    STRLEN	xpv_cur;	/* length of svu_pv as a C string */    \
+    STRLEN	xpv_len 	/* allocated size */
 
 union _xnvu {
     NV	    xnv_nv;		/* numeric value, if any */
@@ -439,19 +436,10 @@ struct xpv {
     _XPV_HEAD;
 };
 
-typedef struct {
-    _XPV_ALLOCATED_HEAD;
-} xpv_allocated;
-
 struct xpviv {
     _XPV_HEAD;
     union _xivu xiv_u;
 };
-
-typedef struct {
-    _XPV_ALLOCATED_HEAD;
-    union _xivu xiv_u;
-} xpviv_allocated;
 
 #define xiv_iv xiv_u.xivu_iv
 
@@ -472,7 +460,7 @@ struct xpvnv {
     union _xmgu	xmg_u;				    \
     HV*		xmg_stash	/* class package */
 
-/* These structure must match the beginning of struct xpvhv in hv.h. */
+/* This structure must match the beginning of struct xpvhv in hv.h. */
 struct xpvmg {
     _XPV_HEAD;
     _XPVMG_HEAD;
@@ -525,12 +513,6 @@ struct xpvfm {
     _XPVCV_COMMON;
 };
 
-typedef struct {
-    _XPV_ALLOCATED_HEAD;
-    _XPVMG_HEAD;
-    _XPVCV_COMMON;
-} xpvfm_allocated;
-
 #define _XPVIO_TAIL							\
     PerlIO *	xio_ifp;	/* ifp and ofp are normally the same */	\
     PerlIO *	xio_ofp;	/* but sockets need separate streams */	\
@@ -547,7 +529,7 @@ typedef struct {
 	DIR *	xiou_dirp;	/* for opendir, readdir, etc */		\
 	void *	xiou_any;	/* for alignment */			\
     } xio_dirpu;							\
-    IV		xio_lines;	/* $. */				\
+    /* IV xio_lines is now in IVX  $. */				\
     IV		xio_page;	/* $% */				\
     IV		xio_page_len;	/* $= */				\
     IV		xio_lines_left;	/* $- */				\
@@ -566,12 +548,6 @@ struct xpvio {
     _XPVMG_HEAD;
     _XPVIO_TAIL;
 };
-
-typedef struct {
-    _XPV_ALLOCATED_HEAD;
-    _XPVMG_HEAD;
-    _XPVIO_TAIL;
-} xpvio_allocated;
 
 #define xio_dirp	xio_dirpu.xiou_dirp
 #define xio_any		xio_dirpu.xiou_any
@@ -915,7 +891,7 @@ the scalar's value cannot change unless written to.
 
 #define SvGAMAGIC(sv)           (SvGMAGICAL(sv) || SvAMAGIC(sv))
 
-#define Gv_AMG(stash)           (PL_amagic_generation && Gv_AMupdate(stash))
+#define Gv_AMG(stash)           (PL_amagic_generation && Gv_AMupdate(stash, FALSE))
 
 #define SvWEAKREF(sv)		((SvFLAGS(sv) & (SVf_ROK|SVprv_WEAKREF)) \
 				  == (SVf_ROK|SVprv_WEAKREF))
@@ -1095,6 +1071,7 @@ the scalar's value cannot change unless written to.
 	    assert(SvTYPE(_svivx) != SVt_PVHV);				\
 	    assert(SvTYPE(_svivx) != SVt_PVCV);				\
 	    assert(SvTYPE(_svivx) != SVt_PVFM);				\
+	    assert(SvTYPE(_svivx) != SVt_PVIO);				\
 	    assert(!isGV_with_GP(_svivx));				\
 	    &(((XPVIV*) MUTABLE_PTR(SvANY(_svivx)))->xiv_iv);		\
 	 }))
@@ -1105,6 +1082,7 @@ the scalar's value cannot change unless written to.
 	    assert(SvTYPE(_svuvx) != SVt_PVHV);				\
 	    assert(SvTYPE(_svuvx) != SVt_PVCV);				\
 	    assert(SvTYPE(_svuvx) != SVt_PVFM);				\
+	    assert(SvTYPE(_svuvx) != SVt_PVIO);				\
 	    assert(!isGV_with_GP(_svuvx));				\
 	    &(((XPVUV*) MUTABLE_PTR(SvANY(_svuvx)))->xuv_uv);		\
 	 }))
@@ -1339,7 +1317,7 @@ the scalar's value cannot change unless written to.
 #define IoOFP(sv)	((XPVIO*)  SvANY(sv))->xio_ofp
 #define IoDIRP(sv)	((XPVIO*)  SvANY(sv))->xio_dirp
 #define IoANY(sv)	((XPVIO*)  SvANY(sv))->xio_any
-#define IoLINES(sv)	((XPVIO*)  SvANY(sv))->xio_lines
+#define IoLINES(sv)	((XPVIO*)  SvANY(sv))->xiv_u.xivu_iv
 #define IoPAGE(sv)	((XPVIO*)  SvANY(sv))->xio_page
 #define IoPAGE_LEN(sv)	((XPVIO*)  SvANY(sv))->xio_page_len
 #define IoLINES_LEFT(sv)((XPVIO*)  SvANY(sv))->xio_lines_left
@@ -2022,6 +2000,9 @@ Evaluates I<sv> more than once. Sets I<len> to 0 if C<SvOOK(sv)> is false.
 	}								\
     } STMT_END
 #endif
+
+#define newIO()	MUTABLE_IO(newSV_type(SVt_PVIO))
+
 /*
  * Local variables:
  * c-indentation-style: bsd

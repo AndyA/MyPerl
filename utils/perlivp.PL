@@ -208,12 +208,16 @@ if (defined($Config{'extensions'})) {
             next if ($_ eq 'threads');
             next if ($_ eq 'threads/shared');
         }
-	# that's a distribution name, not a module name
-	next if /^IO_Compress_(?:Zlib|Base)$/;
-        next if $_ eq 'Devel/DProf'; 
-	# test modules
-	next if $_ eq 'XS/APItest';
-	next if $_ eq 'XS/Typemap';
+        # that's a distribution name, not a module name
+        next if $_ eq 'IO/Compress';
+        next if $_ eq 'Devel/DProf';
+        next if $_ eq 'libnet';
+        next if $_ eq 'Locale/Codes';
+        next if $_ eq 'podlators';
+        # test modules
+        next if $_ eq 'XS/APItest';
+        next if $_ eq 'XS/APItest/KeywordRPN';
+        next if $_ eq 'XS/Typemap';
            # VMS$ perl  -e "eval ""require \""Devel/DProf.pm\"";"" print $@"
            # \NT> perl  -e "eval \"require 'Devel/DProf.pm'\"; print $@"
            # DProf: run perl with -d to use DProf.

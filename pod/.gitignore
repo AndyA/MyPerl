@@ -18,10 +18,8 @@
 /perljp.pod
 /perlko.pod
 /perllinux.pod
-/perlmachten.pod
 /perlmacos.pod
 /perlmacosx.pod
-/perlmint.pod
 /perlmodlib.pod
 /perlmpeix.pod
 /perlnetware.pod
@@ -37,6 +35,7 @@
 /perltoc.pod
 /perltru64.pod
 /perltw.pod
+/perluniprops.pod
 /perluts.pod
 /perlvmesa.pod
 /perlvms.pod

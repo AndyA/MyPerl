@@ -16,7 +16,7 @@ BEGIN {
        exit 0;
      }
 
-     plan(18);
+     plan(23);
 }
 
 use strict;
@@ -116,10 +116,6 @@ print do 'op/threads_create.pl' || die $@;
 EOI
 
 
-TODO: {
-    no strict 'vars';   # Accessing $TODO from test.pl
-    local $TODO = 'refcount issues with threads';
-
 # Scalars leaked: 1
 foreach my $BLOCK (qw(CHECK INIT)) {
     fresh_perl_is(<<EOI, 'ok', { }, "threads in $BLOCK block");
@@ -128,8 +124,6 @@ foreach my $BLOCK (qw(CHECK INIT)) {
         print 'ok';
 EOI
 }
-
-} # TODO
 
 # Scalars leaked: 1
 fresh_perl_is(<<'EOI', 'ok', { }, 'Bug #41138');
@@ -206,8 +200,8 @@ print "ok";
 EOI
 
 # Another, more reliable test for the same del_backref bug:
-fresh_perl_like(
- <<'   EOJ', qr/ok/, {}, 'No del_backref panic [perl #70748] (2)'
+fresh_perl_is(
+ <<'   EOJ', 'ok', {}, 'No del_backref panic [perl #70748] (2)'
    use threads;
    push @bar, threads->create(sub{sub{}})->join() for 1...10;
    print "ok";
@@ -216,10 +210,10 @@ fresh_perl_like(
 
 # Simple closure-returning test: At least this case works (though it
 # leaks), and we don't want to break it.
-fresh_perl_like(<<'EOJ', qr/^foo\n/, {}, 'returning a closure');
+fresh_perl_is(<<'EOJ', 'foo', {}, 'returning a closure');
 use threads;
 print create threads sub {
- my $x = "foo\n";
+ my $x = 'foo';
  sub{sub{$x}}
 }=>->join->()()
  //"undef"
@@ -235,6 +229,124 @@ fresh_perl_is(<<'EOI', 'ok', { }, 'Test for 34394ecd06e704e9');
     weaken($a);
     delete $h{1} && threads->create(sub {}, shift)->join();
     print 'ok';
+EOI
+
+# This will fail in "interesting" ways if stashes in clone_params is not
+# initialised correctly.
+fresh_perl_like(<<'EOI', qr/\AThread 1 terminated abnormally: Not a CODE reference/, { }, 'RT #73046');
+    use strict;
+    use threads;
+
+    sub foo::bar;
+
+    my %h = (1, *{$::{'foo::'}}{HASH});
+    *{$::{'foo::'}} = {};
+
+    threads->create({}, delete $h{1})->join();
+
+    print "end";
+EOI
+
+fresh_perl_is(<<'EOI', 'ok', { }, '0 refcnt neither on tmps stack nor in @_');
+    use threads;
+    my %h = (1, []);
+    use Scalar::Util 'weaken';
+    my $a = $h{1};
+    weaken($a);
+    delete $h{1} && threads->create(sub {}, shift)->join();
+    print 'ok';
+EOI
+
+{
+    my $got;
+    sub stuff {
+	my $a;
+	if (@_) {
+	    $a = "Leakage";
+	    threads->create(\&stuff)->join();
+	} else {
+	    is ($a, undef, 'RT #73086 - clone used to clone active pads');
+	}
+    }
+
+    stuff(1);
+
+    curr_test(curr_test() + 1);
+}
+
+{
+    my $got;
+    sub more_stuff {
+	my $a;
+	$::b = \$a;
+	if (@_) {
+	    $a = "More leakage";
+	    threads->create(\&more_stuff)->join();
+	} else {
+	    is ($a, undef, 'Just special casing lexicals in ?{ ... }');
+	}
+    }
+
+    more_stuff(1);
+
+    curr_test(curr_test() + 1);
+}
+
+# Test from Jerry Hedden, reduced by him from Object::InsideOut's tests.
+fresh_perl_is(<<'EOI', 'ok', { }, '0 refcnt during CLONE');
+use strict;
+use warnings;
+
+use threads;
+
+{
+    package My::Obj;
+    use Scalar::Util 'weaken';
+
+    my %reg;
+
+    sub new
+    {
+        # Create object with ID = 1
+        my $class = shift;
+        my $id = 1;
+        my $obj = bless(\do{ my $scalar = $id; }, $class);
+
+        # Save weak copy of object for reference during cloning
+        weaken($reg{$id} = $obj);
+
+        # Return object
+        return $obj;
+    }
+
+    # Return the internal ID of the object
+    sub id
+    {
+        my $obj = shift;
+        return $$obj;
+    }
+
+    # During cloning 'look' at the object
+    sub CLONE {
+        foreach my $id (keys(%reg)) {
+            # This triggers SvREFCNT_inc() then SvREFCNT_dec() on the referant.
+            my $obj = $reg{$id};
+        }
+    }
+}
+
+# Create object in 'main' thread
+my $obj = My::Obj->new();
+my $id = $obj->id();
+die "\$id is '$id'" unless $id == 1;
+
+# Access object in thread
+threads->create(
+    sub {
+        print $obj->id() == 1 ? "ok\n" : "not ok '" . $obj->id() . "'\n";
+    }
+)->join();
+
 EOI
 
 # EOF

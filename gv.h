@@ -49,7 +49,7 @@ struct gp {
 	   assert(!SvVALID(_gvname_hek));				\
 	   &(GvXPVGV(_gvname_hek)->xiv_u.xivu_namehek);			\
 	 }))
-#  define GvNAME_get(gv)	({ assert(GvNAME_HEK(gv)); HEK_KEY(GvNAME_HEK(gv)); })
+#  define GvNAME_get(gv)	({ assert(GvNAME_HEK(gv)); (char *)HEK_KEY(GvNAME_HEK(gv)); })
 #  define GvNAMELEN_get(gv)	({ assert(GvNAME_HEK(gv)); HEK_LEN(GvNAME_HEK(gv)); })
 #else
 #  define GvGP(gv)	((gv)->sv_u.svu_gp)
@@ -168,14 +168,14 @@ Return the SV from the GV.
 #  define Nullgv Null(GV*)
 #endif
 
-#define DM_UID   0x003
-#define DM_RUID   0x001
-#define DM_EUID   0x002
-#define DM_ARRAY 0x004
-#define DM_GID   0x030
-#define DM_RGID   0x010
-#define DM_EGID   0x020
-#define DM_DELAY 0x100
+#define DM_RUID      0x001
+#define DM_EUID      0x002
+#define DM_UID       (DM_RUID|DM_EUID)
+#define DM_ARRAY_ISA 0x004
+#define DM_RGID      0x010
+#define DM_EGID      0x020
+#define DM_GID       (DM_RGID|DM_EGID)
+#define DM_DELAY     0x100
 
 /*
  * symbol creation flags, for use in gv_fetchpv() and get_*v()

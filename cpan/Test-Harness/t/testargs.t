@@ -3,7 +3,7 @@
 use strict;
 use lib 't/lib';
 
-use Test::More tests => 19;
+use Test::More tests => 21;
 use File::Spec;
 use TAP::Parser;
 use TAP::Harness;
@@ -39,12 +39,18 @@ for my $args ( [qw( yes no maybe )], [qw( 1 2 3 )] ) {
 }
 
 {
-    my $harness = TAP::Harness->new(
-        { verbosity => -9, test_args => [qw( magic hat brigade )] } );
-    my $aggregate = $harness->runtests($test);
+    for my $test_arg_type (
+        [qw( magic hat brigade )],
+        { $test => [qw( magic hat brigade )] },
+      )
+    {
+        my $harness = TAP::Harness->new(
+            { verbosity => -9, test_args => $test_arg_type } );
+        my $aggregate = $harness->runtests($test);
 
-    is $aggregate->total,  3, "ran the right number of tests";
-    is $aggregate->passed, 3, "and they passed";
+        is $aggregate->total,  3, "ran the right number of tests";
+        is $aggregate->passed, 3, "and they passed";
+    }
 }
 
 package Test::Prove;

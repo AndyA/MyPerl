@@ -1,3 +1,5 @@
+=encoding utf8
+
 =head1 NAME
 
 release_managers_guide - Releasing a new version of perl 5.x
@@ -306,8 +308,8 @@ this line in README.vms needs special handling:
 Commit your changes:
 
     $ git st
-	$ git diff
-	  B<review the delta carefully>
+    $ git diff
+    B<review the delta carefully>
 
     $ git commit -a -m 'Bump the perl version in various places for 5.x.y'
 
@@ -356,6 +358,14 @@ installs is for < 5.11.0 only.
 (Then delete the installation directory.)
 
 XXX think of other configurations that need testing.
+
+=item *
+
+I<You MAY SKIP this step for SNAPSHOT>
+
+L<perlport> has a section currently named I<Supported Platforms> that
+indicates which platforms are known to build in the current release.
+If necessary update the list and the indicated version number.
 
 =item *
 
@@ -643,6 +653,10 @@ the MANIFEST files into it, sets the correct permissions on them,
 adds DOS line endings to some, then tars it up as
 F<../perl-x.y.z-RC1.tar.gz>. With C<-b>, it also creates a C<tar.bz2> file.
 
+If you're getting your tarball suffixed with -uncommitted and you're sure
+your changes were all committed, you can override the suffix with:
+
+    $ perl Porting/makerel -b -s ''
 
 XXX if we go for extra tags and branches stuff, then add the extra details
 here
@@ -846,6 +860,10 @@ Be sure to commit your change:
 =item *
 
 Mail p5p to announce your new release, with a quote you prepared earlier.
+
+=item *
+
+Add your quote to F<Porting/epigraphs.pod> and commit it.
 
 =item *
 

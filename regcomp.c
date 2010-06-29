@@ -878,6 +878,7 @@ S_dump_trie(pTHX_ const struct _reg_trie_data *trie, HV *widecharmap,
     U32 state;
     SV *sv=sv_newmortal();
     int colwidth= widecharmap ? 6 : 4;
+    U16 word;
     GET_RE_DEBUG_FLAGS_DECL;
 
     PERL_ARGS_ASSERT_DUMP_TRIE;
@@ -947,6 +948,13 @@ S_dump_trie(pTHX_ const struct _reg_trie_data *trie, HV *widecharmap,
         }
         PerlIO_printf( Perl_debug_log, "\n" );
     }
+    PerlIO_printf(Perl_debug_log, "%*sword_info N:(prev,len)=", (int)depth*2, "");
+    for (word=1; word <= trie->wordcount; word++) {
+	PerlIO_printf(Perl_debug_log, " %d:(%d,%d)",
+	    (int)word, (int)(trie->wordinfo[word].prev),
+	    (int)(trie->wordinfo[word].len));
+    }
+    PerlIO_printf(Perl_debug_log, "\n" );
 }    
 /*
   Dumps a fully constructed but uncompressed trie in list form.
@@ -1076,6 +1084,7 @@ S_dump_trie_interim_table(pTHX_ const struct _reg_trie_data *trie,
 }
 
 #endif
+
 
 /* make_trie(startbranch,first,last,tail,word_count,flags,depth)
   startbranch: the first branch in the whole branch sequence
@@ -1257,8 +1266,6 @@ is the recommended Unicode-aware way of saying
     U16 dupe= trie->states[ state ].wordnum;                    \
     regnode * const noper_next = regnext( noper );              \
                                                                 \
-    if (trie->wordlen)                                          \
-        trie->wordlen[ curword ] = wordlen;                     \
     DEBUG_r({                                                   \
         /* store the word for dumping */                        \
         SV* tmp;                                                \
@@ -1270,6 +1277,9 @@ is the recommended Unicode-aware way of saying
     });                                                         \
                                                                 \
     curword++;                                                  \
+    trie->wordinfo[curword].prev   = 0;                         \
+    trie->wordinfo[curword].len    = wordlen;                   \
+    trie->wordinfo[curword].accept = state;                     \
                                                                 \
     if ( noper_next < tail ) {                                  \
         if (!trie->jump)                                        \
@@ -1282,16 +1292,11 @@ is the recommended Unicode-aware way of saying
     }                                                           \
                                                                 \
     if ( dupe ) {                                               \
-        /* So it's a dupe. This means we need to maintain a   */\
-        /* linked-list from the first to the next.            */\
-        /* we only allocate the nextword buffer when there    */\
-        /* a dupe, so first time we have to do the allocation */\
-        if (!trie->nextword)                                    \
-            trie->nextword = (U16 *)					\
-		PerlMemShared_calloc( word_count + 1, sizeof(U16));	\
-        while ( trie->nextword[dupe] )                          \
-            dupe= trie->nextword[dupe];                         \
-        trie->nextword[dupe]= curword;                          \
+        /* It's a dupe. Pre-insert into the wordinfo[].prev   */\
+        /* chain, so that when the bits of chain are later    */\
+        /* linked together, the dups appear in the chain      */\
+	trie->wordinfo[curword].prev = trie->wordinfo[dupe].prev; \
+	trie->wordinfo[dupe].prev = curword;                    \
     } else {                                                    \
         /* we haven't inserted this word yet.                */ \
         trie->states[ state ].wordnum = curword;                \
@@ -1329,6 +1334,7 @@ S_make_trie(pTHX_ RExC_state_t *pRExC_state, regnode *startbranch, regnode *firs
     regnode *jumper = NULL;
     regnode *nextbranch = NULL;
     regnode *convert = NULL;
+    U32 *prev_states; /* temp array mapping each state to previous one */
     /* we just use folder as a flag in utf8 */
     const U8 * const folder = ( flags == EXACTF
                        ? PL_fold
@@ -1364,6 +1370,9 @@ S_make_trie(pTHX_ RExC_state_t *pRExC_state, regnode *startbranch, regnode *firs
     trie->charmap = (U16 *) PerlMemShared_calloc( 256, sizeof(U16) );
     if (!(UTF && folder))
 	trie->bitmap = (char *) PerlMemShared_calloc( ANYOF_BITMAP_SIZE, 1 );
+    trie->wordinfo = (reg_trie_wordinfo *) PerlMemShared_calloc(
+                       trie->wordcount+1, sizeof(reg_trie_wordinfo));
+
     DEBUG_r({
         trie_words = newAV();
     });
@@ -1496,7 +1505,6 @@ S_make_trie(pTHX_ RExC_state_t *pRExC_state, regnode *startbranch, regnode *firs
 		(int)TRIE_CHARCOUNT(trie), trie->uniquecharcount,
 		(int)trie->minlen, (int)trie->maxlen )
     );
-    trie->wordlen = (U32 *) PerlMemShared_calloc( word_count, sizeof(U32) );
 
     /*
         We now know what we are dealing with in terms of unique chars and
@@ -1519,6 +1527,9 @@ S_make_trie(pTHX_ RExC_state_t *pRExC_state, regnode *startbranch, regnode *firs
 
     */
 
+
+    Newx(prev_states, TRIE_CHARCOUNT(trie) + 2, U32);
+    prev_states[1] = 0;
 
     if ( (IV)( ( TRIE_CHARCOUNT(trie) + 1 ) * trie->uniquecharcount + 1) > SvIV(re_trie_maxbuff) ) {
         /*
@@ -1590,6 +1601,7 @@ S_make_trie(pTHX_ RExC_state_t *pRExC_state, regnode *startbranch, regnode *firs
                         }
                         if ( ! newstate ) {
                             newstate = next_alloc++;
+			    prev_states[newstate] = state;
                             TRIE_LIST_PUSH( state, charid, newstate );
                             transcount++;
                         }
@@ -1773,6 +1785,8 @@ S_make_trie(pTHX_ RExC_state_t *pRExC_state, regnode *startbranch, regnode *firs
                         if ( !trie->trans[ state + charid ].next ) {
                             trie->trans[ state + charid ].next = next_alloc;
                             trie->trans[ state ].check++;
+			    prev_states[TRIE_NODENUM(next_alloc)]
+				    = TRIE_NODENUM(state);
                             next_alloc += trie->uniquecharcount;
                         }
                         state = trie->trans[ state + charid ].next;
@@ -1920,9 +1934,6 @@ S_make_trie(pTHX_ RExC_state_t *pRExC_state, regnode *startbranch, regnode *firs
 	PerlMemShared_realloc( trie->trans, trie->lasttrans
 			       * sizeof(reg_trie_trans) );
 
-    /* and now dump out the compressed format */
-    DEBUG_TRIE_COMPILE_r(dump_trie(trie, widecharmap, revcharmap, depth+1));
-
     {   /* Modify the program and insert the new TRIE node*/ 
         U8 nodetype =(U8)(flags & 0xFF);
         char *str=NULL;
@@ -2052,6 +2063,7 @@ S_make_trie(pTHX_ RExC_state_t *pRExC_state, regnode *startbranch, regnode *firs
 		    break;
 		}
 	    }
+	    trie->prefixlen = (state-1);
             if (str) {
                 regnode *n = convert+NODE_SZ_STR(convert);
                 NEXT_OFF(convert) = NODE_SZ_STR(convert);
@@ -2147,6 +2159,42 @@ S_make_trie(pTHX_ RExC_state_t *pRExC_state, regnode *startbranch, regnode *firs
             Set_Node_Offset_Length(convert,mjd_offset,mjd_nodelen);
         });
     } /* end node insert */
+
+    /*  Finish populating the prev field of the wordinfo array.  Walk back
+     *  from each accept state until we find another accept state, and if
+     *  so, point the first word's .prev field at the second word. If the
+     *  second already has a .prev field set, stop now. This will be the
+     *  case either if we've already processed that word's accept state,
+     *  or that that state had multiple words, and the overspill words
+     *  were already linked up earlier.
+     */
+    {
+	U16 word;
+	U32 state;
+	U16 prev;
+
+	for (word=1; word <= trie->wordcount; word++) {
+	    prev = 0;
+	    if (trie->wordinfo[word].prev)
+		continue;
+	    state = trie->wordinfo[word].accept;
+	    while (state) {
+		state = prev_states[state];
+		if (!state)
+		    break;
+		prev = trie->states[state].wordnum;
+		if (prev)
+		    break;
+	    }
+	    trie->wordinfo[word].prev = prev;
+	}
+	Safefree(prev_states);
+    }
+
+
+    /* and now dump out the compressed format */
+    DEBUG_TRIE_COMPILE_r(dump_trie(trie, widecharmap, revcharmap, depth+1));
+
     RExC_rxi->data->data[ data_slot + 1 ] = (void*)widecharmap;
 #ifdef DEBUGGING
     RExC_rxi->data->data[ data_slot + TRIE_WORDS_OFFSET ] = (void*)trie_words;
@@ -3068,7 +3116,7 @@ S_study_chunk(pTHX_ RExC_state_t *pRExC_state, regnode **scanp,
 	    }
 	    flags &= ~SCF_DO_STCLASS;
 	}
-	else if (strchr((const char*)PL_varies,OP(scan))) {
+	else if (REGNODE_VARIES(OP(scan))) {
 	    I32 mincount, maxcount, minnext, deltanext, fl = 0;
 	    I32 f = flags, pos_before = 0;
 	    regnode * const oscan = scan;
@@ -3220,7 +3268,7 @@ S_study_chunk(pTHX_ RExC_state_t *pRExC_state, regnode **scanp,
 
 		    /* Skip open. */
 		    nxt = regnext(nxt);
-		    if (!strchr((const char*)PL_simple,OP(nxt))
+		    if (!REGNODE_SIMPLE(OP(nxt))
 			&& !(PL_regkind[OP(nxt)] == EXACT
 			     && STR_LEN(nxt) == 1))
 			goto nogo;
@@ -3479,7 +3527,7 @@ S_study_chunk(pTHX_ RExC_state_t *pRExC_state, regnode **scanp,
 		data->longest = &(data->longest_float);
 	    }
 	}
-	else if (strchr((const char*)PL_simple,OP(scan))) {
+	else if (REGNODE_SIMPLE(OP(scan))) {
 	    int value = 0;
 
 	    if (flags & SCF_DO_SUBSTR) {
@@ -4556,7 +4604,7 @@ reStudy:
 	    ri->regstclass = trie_op;
 	}
 #endif	
-	else if (strchr((const char*)PL_simple,OP(first)))
+	else if (REGNODE_SIMPLE(OP(first)))
 	    ri->regstclass = first;
 	else if (PL_regkind[OP(first)] == BOUND ||
 		 PL_regkind[OP(first)] == NBOUND)
@@ -4897,7 +4945,7 @@ reStudy:
 #endif
 #ifdef DEBUGGING
     if (RExC_paren_names) {
-        ri->name_list_idx = add_data( pRExC_state, 1, "p" );
+        ri->name_list_idx = add_data( pRExC_state, 1, "a" );
         ri->data->data[ri->name_list_idx] = (void*)SvREFCNT_inc(RExC_paren_name_list);
     } else
 #endif
@@ -4947,7 +4995,7 @@ Perl_reg_named_buff(pTHX_ REGEXP * const rx, SV * const key, SV * const value,
     if (flags & RXapif_FETCH) {
         return reg_named_buff_fetch(rx, key, flags);
     } else if (flags & (RXapif_STORE | RXapif_DELETE | RXapif_CLEAR)) {
-        Perl_croak(aTHX_ "%s", PL_no_modify);
+        Perl_croak_no_modify(aTHX);
         return NULL;
     } else if (flags & RXapif_EXISTS) {
         return reg_named_buff_exists(rx, key, flags)
@@ -5247,7 +5295,7 @@ Perl_reg_numbered_buff_store(pTHX_ REGEXP * const rx, const I32 paren,
     PERL_UNUSED_ARG(value);
 
     if (!PL_localizing)
-        Perl_croak(aTHX_ "%s", PL_no_modify);
+        Perl_croak_no_modify(aTHX);
 }
 
 I32
@@ -6714,11 +6762,10 @@ S_reg_namedseq(pTHX_ RExC_state_t *pRExC_state, UV *valuep, I32 *flagp)
 	    | PERL_SCAN_DISALLOW_PREFIX
 	    | (SIZE_ONLY ? PERL_SCAN_SILENT_ILLDIGIT : 0);
     
-	char * endchar = strchr(RExC_parse, '.');
-	if (endchar) {
+	char * endchar = RExC_parse + strcspn(RExC_parse, ".}");
+	if (endchar < endbrace) {
 	    ckWARNreg(endchar, "Using just the first character returned by \\N{} in character class");
 	}
-	else endchar = endbrace;
 
 	length_of_hex = (STRLEN)(endchar - RExC_parse);
 	*valuep = grok_hex(RExC_parse, &length_of_hex, &flags, NULL);
@@ -6769,8 +6816,7 @@ S_reg_namedseq(pTHX_ RExC_state_t *pRExC_state, UV *valuep, I32 *flagp)
 
 	    /* Code points are separated by dots.  If none, there is only one
 	     * code point, and is terminated by the brace */
-	    endchar = strchr(RExC_parse, '.');
-	    if (! endchar) endchar = endbrace;
+	    endchar = RExC_parse + strcspn(RExC_parse, ".}");
 
 	    /* The values are Unicode even on EBCDIC machines */
 	    length_of_hex = (STRLEN)(endchar - RExC_parse);
@@ -7445,8 +7491,7 @@ tryagain:
 			break;
 		    case 'c':
 			p++;
-			ender = UCHARAT(p++);
-			ender = toCTRL(ender);
+			ender = grok_bslash_c(*p++, SIZE_ONLY);
 			break;
 		    case '0': case '1': case '2': case '3':case '4':
 		    case '5': case '6': case '7': case '8':case '9':
@@ -8063,8 +8108,7 @@ parseit:
 		    goto recode_encoding;
 		break;
 	    case 'c':
-		value = UCHARAT(RExC_parse++);
-		value = toCTRL(value);
+		value = grok_bslash_c(*RExC_parse++, SIZE_ONLY);
 		break;
 	    case '0': case '1': case '2': case '3': case '4':
 	    case '5': case '6': case '7': case '8': case '9':
@@ -9512,6 +9556,7 @@ Perl_regfree_internal(pTHX_ REGEXP * const rx)
 	while (--n >= 0) {
           /* If you add a ->what type here, update the comment in regcomp.h */
 	    switch (ri->data->what[n]) {
+	    case 'a':
 	    case 's':
 	    case 'S':
 	    case 'u':
@@ -9573,12 +9618,9 @@ Perl_regfree_internal(pTHX_ REGEXP * const rx)
                         PerlMemShared_free(trie->trans);
                         if (trie->bitmap)
                             PerlMemShared_free(trie->bitmap);
-                        if (trie->wordlen)
-                            PerlMemShared_free(trie->wordlen);
                         if (trie->jump)
                             PerlMemShared_free(trie->jump);
-                        if (trie->nextword)
-                            PerlMemShared_free(trie->nextword);
+			PerlMemShared_free(trie->wordinfo);
                         /* do this last!!!! */
                         PerlMemShared_free(ri->data->data[n]);
 		    }
@@ -9595,9 +9637,8 @@ Perl_regfree_internal(pTHX_ REGEXP * const rx)
     Safefree(ri);
 }
 
-#define sv_dup_inc(s,t)	SvREFCNT_inc(sv_dup(s,t))
-#define av_dup_inc(s,t)	MUTABLE_AV(SvREFCNT_inc(sv_dup((const SV *)s,t)))
-#define hv_dup_inc(s,t)	MUTABLE_HV(SvREFCNT_inc(sv_dup((const SV *)s,t)))
+#define av_dup_inc(s,t)	MUTABLE_AV(sv_dup_inc((const SV *)s,t))
+#define hv_dup_inc(s,t)	MUTABLE_HV(sv_dup_inc((const SV *)s,t))
 #define SAVEPVN(p,n)	((p) ? savepvn(p,n) : NULL)
 
 /* 
@@ -9749,8 +9790,9 @@ Perl_regdupe_internal(pTHX_ REGEXP * const rx, CLONE_PARAMS *param)
 	for (i = 0; i < count; i++) {
 	    d->what[i] = ri->data->what[i];
 	    switch (d->what[i]) {
-	        /* legal options are one of: sSfpontTu
+	        /* legal options are one of: sSfpontTua
 	           see also regcomp.h and pregfree() */
+	    case 'a': /* actually an AV, but the dup function is identical.  */
 	    case 's':
 	    case 'S':
 	    case 'p': /* actually an AV, but the dup function is identical.  */
@@ -9826,6 +9868,10 @@ Perl_regnext(pTHX_ register regnode *p)
     if (!p)
 	return(NULL);
 
+    if (OP(p) > REGNODE_MAX) {		/* regnode.type is unsigned */
+	Perl_croak(aTHX_ "Corrupted regexp opcode %d > %d", (int)OP(p), (int)REGNODE_MAX);
+    }
+
     offset = (reg_off_by_arg[OP(p)] ? ARG(p) : NEXT_OFF(p));
     if (offset == 0)
 	return(NULL);
@@ -9885,7 +9931,7 @@ Perl_save_re_context(pTHX)
 
     state = (struct re_save_state *)(PL_savestack + PL_savestack_ix);
     PL_savestack_ix += SAVESTACK_ALLOC_FOR_RE_SAVE_STATE;
-    SSPUSHINT(SAVEt_RE_STATE);
+    SSPUSHUV(SAVEt_RE_STATE);
 
     Copy(&PL_reg_state, state, 1, struct re_save_state);
 

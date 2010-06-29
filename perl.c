@@ -1115,7 +1115,6 @@ perl_destruct(pTHXx)
 	Safefree(array);
 	HvARRAY(PL_strtab) = 0;
 	HvTOTALKEYS(PL_strtab) = 0;
-	HvFILL(PL_strtab) = 0;
     }
     SvREFCNT_dec(PL_strtab);
 
@@ -2193,6 +2192,7 @@ S_parse_body(pTHX_ char **env, XSINIT_t xsinit)
 #endif
 
     ENTER;
+    PL_restartjmpenv = NULL;
     PL_restartop = 0;
     return NULL;
 }
@@ -2298,6 +2298,7 @@ S_run_body(pTHX_ I32 oldscope)
     /* do it */
 
     if (PL_restartop) {
+	PL_restartjmpenv = NULL;
 	PL_op = PL_restartop;
 	PL_restartop = 0;
 	CALLRUNOPS(aTHX);
@@ -2620,6 +2621,7 @@ Perl_call_sv(pTHX_ SV *sv, VOL I32 flags)
 	    /* NOTREACHED */
 	case 3:
 	    if (PL_restartop) {
+		PL_restartjmpenv = NULL;
 		PL_op = PL_restartop;
 		PL_restartop = 0;
 		goto redo_body;
@@ -2720,6 +2722,7 @@ Perl_eval_sv(pTHX_ SV *sv, I32 flags)
 	/* NOTREACHED */
     case 3:
 	if (PL_restartop) {
+	    PL_restartjmpenv = NULL;
 	    PL_op = PL_restartop;
 	    PL_restartop = 0;
 	    goto redo_body;
@@ -2839,7 +2842,7 @@ S_usage(pTHX_ const char *name)		/* XXX move this out into a module ? */
 "  -U                allow unsafe operations\n"
 "  -v                print version, patchlevel and license\n"
 "  -V[:variable]     print configuration summary (or a single Config.pm variable)\n",
-"  -w                enable many useful warnings (RECOMMENDED)\n"
+"  -w                enable many useful warnings\n"
 "  -W                enable all warnings\n"
 "  -x[directory]     ignore text before #!perl line (optionally cd to directory)\n"
 "  -X                disable all warnings\n"
@@ -3784,11 +3787,14 @@ Perl_init_debugger(pTHX)
     PL_DBline = gv_fetchpvs("DB::dbline", GV_ADDMULTI, SVt_PVAV);
     PL_DBsub = gv_HVadd(gv_fetchpvs("DB::sub", GV_ADDMULTI, SVt_PVHV));
     PL_DBsingle = GvSV((gv_fetchpvs("DB::single", GV_ADDMULTI, SVt_PV)));
-    sv_setiv(PL_DBsingle, 0);
+    if (!SvIOK(PL_DBsingle))
+	sv_setiv(PL_DBsingle, 0);
     PL_DBtrace = GvSV((gv_fetchpvs("DB::trace", GV_ADDMULTI, SVt_PV)));
-    sv_setiv(PL_DBtrace, 0);
+    if (!SvIOK(PL_DBtrace))
+	sv_setiv(PL_DBtrace, 0);
     PL_DBsignal = GvSV((gv_fetchpvs("DB::signal", GV_ADDMULTI, SVt_PV)));
-    sv_setiv(PL_DBsignal, 0);
+    if (!SvIOK(PL_DBsignal))
+	sv_setiv(PL_DBsignal, 0);
     PL_curstash = ostash;
 }
 

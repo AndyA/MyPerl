@@ -12,8 +12,8 @@
 
 struct xpvcv {
     _XPV_HEAD;
-    _XPVMG_HEAD;
     _XPVCV_COMMON;
+    I32	xcv_depth;	/* >= 2 indicates recursive call */
 };
 
 /*
@@ -52,10 +52,10 @@ Returns the stash of the CV.
 #if defined(__GNUC__) && !defined(PERL_GCC_BRACE_GROUPS_FORBIDDEN)
 #  define CvDEPTH(sv) (*({const CV *const _cvdepth = (const CV *)sv; \
 			  assert(SvTYPE(_cvdepth) == SVt_PVCV);	 \
-			  &((XPVCV*)SvANY(_cvdepth))->xiv_u.xivu_i32; \
+			  &((XPVCV*)SvANY(_cvdepth))->xcv_depth; \
 			}))
 #else
-#  define CvDEPTH(sv)	((XPVCV*)MUTABLE_PTR(SvANY(sv)))->xiv_u.xivu_i32
+#  define CvDEPTH(sv)	((XPVCV*)MUTABLE_PTR(SvANY(sv)))->xcv_depth
 #endif
 #define CvPADLIST(sv)	((XPVCV*)MUTABLE_PTR(SvANY(sv)))->xcv_padlist
 #define CvOUTSIDE(sv)	((XPVCV*)MUTABLE_PTR(SvANY(sv)))->xcv_outside
@@ -63,7 +63,9 @@ Returns the stash of the CV.
 #define CvOUTSIDE_SEQ(sv) ((XPVCV*)MUTABLE_PTR(SvANY(sv)))->xcv_outside_seq
 
 #define CVf_METHOD	0x0001	/* CV is explicitly marked as a method */
-#define CVf_LVALUE	0x0004  /* CV return value can be used as lvalue */
+#define CVf_LVALUE	0x0002  /* CV return value can be used as lvalue */
+#define CVf_CONST	0x0004  /* inlinable sub */
+#define CVf_ISXSUB	0x0008	/* CV is an XSUB, not pure perl.  */
 
 #define CVf_WEAKOUTSIDE	0x0010  /* CvOUTSIDE isn't ref counted */
 #define CVf_CLONE	0x0020	/* anon CV uses external lexicals */
@@ -73,8 +75,6 @@ Returns the stash of the CV.
 				 * require, eval). */
 #define CVf_NODEBUG	0x0200	/* no DB::sub indirection for this CV
 				   (esp. useful for special XSUBs) */
-#define CVf_CONST	0x0400  /* inlinable sub */
-#define CVf_ISXSUB	0x0800	/* CV is an XSUB, not pure perl.  */
 
 /* This symbol for optimised communication between toke.c and op.c: */
 #define CVf_BUILTIN_ATTRS	(CVf_METHOD|CVf_LVALUE)

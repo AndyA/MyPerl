@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 BEGIN {
-    unshift @INC, 't/lib';
+  unshift @INC, 't/lib';
 }
 
 # test T::H::_open_spool and _close_spool - these are good examples
@@ -53,6 +53,7 @@ BEGIN {
 
 use TAP::Harness;
 use TAP::Parser;
+use TAP::Parser::Iterator::Array;
 
 plan tests => 4;
 
@@ -112,8 +113,8 @@ END_TAP
 
     my $parser = TAP::Parser->new(
         {   spool => $spoolHandle,
-            stream =>
-              TAP::Parser::IteratorFactory->new( [ split /\n/ => $tap ] )
+            iterator =>
+              TAP::Parser::Iterator::Array->new( [ split /\n/ => $tap ] )
         }
     );
 

@@ -924,25 +924,28 @@ Perl_scalar(pTHX_ OP *o)
     case OP_LEAVETRY:
 	kid = cLISTOPo->op_first;
 	scalar(kid);
-	while ((kid = kid->op_sibling)) {
-	    if (kid->op_sibling)
-		scalarvoid(kid);
-	    else
+	kid = kid->op_sibling;
+    do_kids:
+	while (kid) {
+	    OP *sib = kid->op_sibling;
+	    if (sib && kid->op_type != OP_LEAVEWHEN) {
+		if (sib->op_type == OP_BREAK && sib->op_flags & OPf_SPECIAL) {
+		    scalar(kid);
+		    scalarvoid(sib);
+		    break;
+		} else
+		    scalarvoid(kid);
+	    } else
 		scalar(kid);
+	    kid = sib;
 	}
 	PL_curcop = &PL_compiling;
 	break;
     case OP_SCOPE:
     case OP_LINESEQ:
     case OP_LIST:
-	for (kid = cLISTOPo->op_first; kid; kid = kid->op_sibling) {
-	    if (kid->op_sibling)
-		scalarvoid(kid);
-	    else
-		scalar(kid);
-	}
-	PL_curcop = &PL_compiling;
-	break;
+	kid = cLISTOPo->op_first;
+	goto do_kids;
     case OP_SORT:
 	Perl_ck_warner(aTHX_ packWARN(WARN_VOID), "Useless use of sort in scalar context");
 	break;
@@ -986,7 +989,7 @@ Perl_scalarvoid(pTHX_ OP *o)
     want = o->op_flags & OPf_WANT;
     if ((want && want != OPf_WANT_SCALAR)
 	 || (PL_parser && PL_parser->error_count)
-	 || o->op_type == OP_RETURN || o->op_type == OP_REQUIRE)
+	 || o->op_type == OP_RETURN || o->op_type == OP_REQUIRE || o->op_type == OP_LEAVEWHEN)
     {
 	return o;
     }
@@ -1106,6 +1109,11 @@ Perl_scalarvoid(pTHX_ OP *o)
        }
        useless = "negative pattern binding (!~)";
        break;
+
+    case OP_SUBST:
+	if (cPMOPo->op_pmflags & PMf_NONDESTRUCT)
+	    useless = "Non-destructive substitution (s///r)";
+	break;
 
     case OP_RV2GV:
     case OP_RV2SV:
@@ -1297,24 +1305,27 @@ Perl_list(pTHX_ OP *o)
     case OP_LEAVETRY:
 	kid = cLISTOPo->op_first;
 	list(kid);
-	while ((kid = kid->op_sibling)) {
-	    if (kid->op_sibling)
-		scalarvoid(kid);
-	    else
+	kid = kid->op_sibling;
+    do_kids:
+	while (kid) {
+	    OP *sib = kid->op_sibling;
+	    if (sib && kid->op_type != OP_LEAVEWHEN) {
+		if (sib->op_type == OP_BREAK && sib->op_flags & OPf_SPECIAL) {
+		    list(kid);
+		    scalarvoid(sib);
+		    break;
+		} else
+		    scalarvoid(kid);
+	    } else
 		list(kid);
+	    kid = sib;
 	}
 	PL_curcop = &PL_compiling;
 	break;
     case OP_SCOPE:
     case OP_LINESEQ:
-	for (kid = cLISTOPo->op_first; kid; kid = kid->op_sibling) {
-	    if (kid->op_sibling)
-		scalarvoid(kid);
-	    else
-		list(kid);
-	}
-	PL_curcop = &PL_compiling;
-	break;
+	kid = cLISTOPo->op_first;
+	goto do_kids;
     }
     return o;
 }
@@ -2219,6 +2230,11 @@ Perl_bind_match(pTHX_ I32 type, OP *left, OP *right)
 	no_bareword_allowed(right);
     }
 
+    /* !~ doesn't make sense with s///r, so error on it for now */
+    if (rtype == OP_SUBST && (cPMOPx(right)->op_pmflags & PMf_NONDESTRUCT) &&
+	type == OP_NOT)
+	yyerror("Using !~ with s///r doesn't make sense");
+
     ismatchop = rtype == OP_MATCH ||
 		rtype == OP_SUBST ||
 		rtype == OP_TRANS;
@@ -2232,7 +2248,9 @@ Perl_bind_match(pTHX_ I32 type, OP *left, OP *right)
 	right->op_flags |= OPf_STACKED;
 	if (rtype != OP_MATCH &&
             ! (rtype == OP_TRANS &&
-               right->op_private & OPpTRANS_IDENTICAL))
+               right->op_private & OPpTRANS_IDENTICAL) &&
+	    ! (rtype == OP_SUBST &&
+	       (cPMOPx(right)->op_pmflags & PMf_NONDESTRUCT)))
 	    newleft = mod(left, rtype);
 	else
 	    newleft = left;
@@ -5902,20 +5920,19 @@ Perl_newATTRSUB(pTHX_ I32 floor, OP *o, OP *proto, OP *attrs, OP *block)
 
     if (has_name) {
 	if (PERLDB_SUBLINE && PL_curstash != PL_debstash) {
-	    SV * const sv = newSV(0);
 	    SV * const tmpstr = sv_newmortal();
 	    GV * const db_postponed = gv_fetchpvs("DB::postponed",
 						  GV_ADDMULTI, SVt_PVHV);
 	    HV *hv;
-
-	    Perl_sv_setpvf(aTHX_ sv, "%s:%ld-%ld",
-			   CopFILE(PL_curcop),
-			   (long)PL_subline, (long)CopLINE(PL_curcop));
+	    SV * const sv = Perl_newSVpvf(aTHX_ "%s:%ld-%ld",
+					  CopFILE(PL_curcop),
+					  (long)PL_subline,
+					  (long)CopLINE(PL_curcop));
 	    gv_efullname3(tmpstr, gv, NULL);
 	    (void)hv_store(GvHV(PL_DBsub), SvPVX_const(tmpstr),
 		    SvCUR(tmpstr), sv, 0);
 	    hv = GvHVn(db_postponed);
-	    if (HvFILL(hv) > 0 && hv_exists(hv, SvPVX_const(tmpstr), SvCUR(tmpstr))) {
+	    if (HvTOTALKEYS(hv) > 0 && hv_exists(hv, SvPVX_const(tmpstr), SvCUR(tmpstr))) {
 		CV * const pcv = GvCV(db_postponed);
 		if (pcv) {
 		    dSP;
@@ -6741,17 +6758,6 @@ Perl_ck_rvconst(pTHX_ register OP *o)
 		Perl_croak(aTHX_ "Constant is not %s reference", badtype);
 	    return o;
 	}
-	else if ((o->op_type == OP_RV2HV || o->op_type == OP_RV2SV) &&
-		(PL_hints & HINT_STRICT_REFS) && SvPOK(kidsv)) {
-	    /* If this is an access to a stash, disable "strict refs", because
-	     * stashes aren't auto-vivified at compile-time (unless we store
-	     * symbols in them), and we don't want to produce a run-time
-	     * stricture error when auto-vivifying the stash. */
-	    const char *s = SvPV_nolen(kidsv);
-	    const STRLEN l = SvCUR(kidsv);
-	    if (l > 1 && s[l-1] == ':' && s[l-2] == ':')
-		o->op_private &= ~HINT_STRICT_REFS;
-	}
 	if ((o->op_private & HINT_STRICT_REFS) && (kid->op_private & OPpCONST_BARE)) {
 	    const char *badthing;
 	    switch (o->op_type) {
@@ -7161,11 +7167,12 @@ Perl_ck_glob(pTHX_ OP *o)
 	ENTER;
 	Perl_load_module(aTHX_ PERL_LOADMOD_NOIMPORT,
 		newSVpvs("File::Glob"), NULL, NULL, NULL);
-	gv = gv_fetchpvs("CORE::GLOBAL::glob", 0, SVt_PVCV);
-	glob_gv = gv_fetchpvs("File::Glob::csh_glob", 0, SVt_PVCV);
-	GvCV(gv) = GvCV(glob_gv);
-	SvREFCNT_inc_void(MUTABLE_SV(GvCV(gv)));
-	GvIMPORTED_CV_on(gv);
+	if((glob_gv = gv_fetchpvs("File::Glob::csh_glob", 0, SVt_PVCV))) {
+	    gv = gv_fetchpvs("CORE::GLOBAL::glob", 0, SVt_PVCV);
+	    GvCV(gv) = GvCV(glob_gv);
+	    SvREFCNT_inc_void(MUTABLE_SV(GvCV(gv)));
+	    GvIMPORTED_CV_on(gv);
+	}
 	LEAVE;
     }
 #endif /* PERL_EXTERNAL_GLOB */
@@ -7746,8 +7753,14 @@ Perl_ck_shift(pTHX_ OP *o)
     PERL_ARGS_ASSERT_CK_SHIFT;
 
     if (!(o->op_flags & OPf_KIDS)) {
-	OP *argop = newUNOP(OP_RV2AV, 0,
-	    scalar(newGVOP(OP_GV, 0, CvUNIQUE(PL_compcv) ? PL_argvgv : PL_defgv)));
+	OP *argop;
+
+	if (!CvUNIQUE(PL_compcv)) {
+	    o->op_flags |= OPf_SPECIAL;
+	    return o;
+	}
+
+	argop = newUNOP(OP_RV2AV, 0, scalar(newGVOP(OP_GV, 0, PL_argvgv)));
 #ifdef PERL_MAD
 	OP * const oldo = o;
 	o = newUNOP(type, 0, scalar(argop));
@@ -8864,6 +8877,20 @@ Perl_peep(pTHX_ register OP *o)
 	    }
 	    break;
 	}
+	case OP_RV2SV:
+	case OP_RV2AV:
+	case OP_RV2HV:
+	    if (oldop
+		 && (  oldop->op_type == OP_AELEM
+		    || oldop->op_type == OP_PADSV
+		    || oldop->op_type == OP_RV2SV
+		    || oldop->op_type == OP_RV2GV
+		    || oldop->op_type == OP_HELEM
+		    )
+	         && (oldop->op_private & OPpDEREF)
+	    ) {
+		o->op_private |= OPpDEREFed;
+	    }
 
 	case OP_SORT: {
 	    /* will point to RV2AV or PADAV op on LHS/RHS of assign */

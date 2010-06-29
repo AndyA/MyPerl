@@ -70,6 +70,7 @@ typedef struct regexp_paren_pair {
         /* what engine created this regexp? */				\
 	const struct regexp_engine* engine; 				\
 	REGEXP *mother_re; /* what re is this a lightweight copy of? */	\
+	HV *paren_names;   /* Optional hash of paren names */		\
 	/* Information about the match that the perl core uses to */	\
 	/* manage things */						\
 	U32 extflags;	/* Flags used both externally and internally */	\
@@ -103,14 +104,10 @@ typedef struct regexp_paren_pair {
 
 typedef struct regexp {
 	_XPV_HEAD;
-	_XPVMG_HEAD;
 	_REGEXP_COMMON;
 } regexp;
 
-/*        HV *paren_names;	 Optional hash of paren names
-	  now stored in the IV union */
-
-#define RXp_PAREN_NAMES(rx)	((rx)->xiv_u.xivu_hv)
+#define RXp_PAREN_NAMES(rx)	((rx)->paren_names)
 
 /* used for high speed searches */
 typedef struct re_scream_pos_data_s
@@ -266,11 +263,13 @@ and check for NULL.
 #define SINGLE_PAT_MOD       's'
 #define IGNORE_PAT_MOD       'i'
 #define XTENDED_PAT_MOD      'x'
+#define NONDESTRUCT_PAT_MOD  'r'
 
 #define ONCE_PAT_MODS        "o"
 #define KEEPCOPY_PAT_MODS    "p"
 #define EXEC_PAT_MODS        "e"
 #define LOOP_PAT_MODS        "gc"
+#define NONDESTRUCT_PAT_MODS "r"
 
 #define STD_PAT_MODS        "msix"
 
@@ -279,7 +278,7 @@ and check for NULL.
 #define EXT_PAT_MODS    ONCE_PAT_MODS   KEEPCOPY_PAT_MODS
 #define QR_PAT_MODS     STD_PAT_MODS    EXT_PAT_MODS
 #define M_PAT_MODS      QR_PAT_MODS     LOOP_PAT_MODS
-#define S_PAT_MODS      M_PAT_MODS      EXEC_PAT_MODS
+#define S_PAT_MODS      M_PAT_MODS      EXEC_PAT_MODS      NONDESTRUCT_PAT_MODS
 
 /*
  * NOTE: if you modify any RXf flags you should run regen.pl or regcomp.pl
@@ -490,13 +489,6 @@ and check for NULL.
 
 #define FBMrf_MULTILINE	1
 
-/* an accepting state/position*/
-struct _reg_trie_accepted {
-    U8   *endpos;
-    U16  wordnum;
-};
-typedef struct _reg_trie_accepted reg_trie_accepted;
-
 /* some basic information about the current match that is created by
  * Perl_regexec_flags and then passed to regtry(), regmatch() etc */
 
@@ -557,11 +549,15 @@ typedef struct regmatch_state {
 	    U32 lastparen;
 	    CHECKPOINT cp;
 
-	    reg_trie_accepted *accept_buff; /* accepting states we have seen */
-	    U32		accepted; /* how many accepting states we have seen */
+	    U32		accepted; /* how many accepting states left */
 	    U16         *jump;  /* positive offsets from me */
 	    regnode	*B;	/* node following the trie */
 	    regnode	*me;	/* Which node am I - needed for jump tries*/
+	    U8		*firstpos;/* pos in string of first trie match */
+	    U32		firstchars;/* len in chars of firstpos from start */
+	    U16		nextword;/* next word to try */
+	    U16		topword; /* longest accepted word */
+	    bool	longfold;/* saw a fold with a 1->n char mapping */
 	} trie;
 
         /* special types - these members are used to store state for special
@@ -607,12 +603,11 @@ typedef struct regmatch_state {
 	    /* this first element must match u.yes */
 	    struct regmatch_state *prev_yes_state;
 	    struct regmatch_state *prev_curlyx; /* previous cur_curlyx */
-	    regnode	*A, *B;	/* the nodes corresponding to /A*B/  */
+	    regnode	*me;	/* the CURLYX node  */
+	    regnode	*B;	/* the B node in /A*B/  */
 	    CHECKPOINT	cp;	/* remember current savestack index */
 	    bool	minmod;
 	    int		parenfloor;/* how far back to strip paren data */
-	    int		min;	/* the minimal number of A's to match */
-	    int		max;	/* the maximal number of A's to match */
 
 	    /* these two are modified by WHILEM */
 	    int		count;	/* how many instances of A we've matched */

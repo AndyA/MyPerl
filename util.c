@@ -70,12 +70,18 @@ S_write_no_mem(pTHX)
     NORETURN_FUNCTION_END;
 }
 
+#if defined (DEBUGGING) || defined(PERL_IMPLICIT_SYS) || defined (PERL_TRACK_MEMPOOL)
+#  define ALWAYS_NEED_THX
+#endif
+
 /* paranoid version of system's malloc() */
 
 Malloc_t
 Perl_safesysmalloc(MEM_SIZE size)
 {
+#ifdef ALWAYS_NEED_THX
     dTHX;
+#endif
     Malloc_t ptr;
 #ifdef HAS_64K_LIMIT
 	if (size > 0xffff) {
@@ -118,10 +124,15 @@ Perl_safesysmalloc(MEM_SIZE size)
 #endif
 	return ptr;
 }
-    else if (PL_nomemok)
-	return NULL;
     else {
-	return write_no_mem();
+#ifndef ALWAYS_NEED_THX
+	dTHX;
+#endif
+	if (PL_nomemok)
+	    return NULL;
+	else {
+	    return write_no_mem();
+	}
     }
     /*NOTREACHED*/
 }
@@ -131,7 +142,9 @@ Perl_safesysmalloc(MEM_SIZE size)
 Malloc_t
 Perl_safesysrealloc(Malloc_t where,MEM_SIZE size)
 {
+#ifdef ALWAYS_NEED_THX
     dTHX;
+#endif
     Malloc_t ptr;
 #if !defined(STANDARD_C) && !defined(HAS_REALLOC_PROTOTYPE) && !defined(PERL_MICRO)
     Malloc_t PerlMem_realloc();
@@ -213,10 +226,15 @@ Perl_safesysrealloc(Malloc_t where,MEM_SIZE size)
     if (ptr != NULL) {
 	return ptr;
     }
-    else if (PL_nomemok)
-	return NULL;
     else {
-	return write_no_mem();
+#ifndef ALWAYS_NEED_THX
+	dTHX;
+#endif
+	if (PL_nomemok)
+	    return NULL;
+	else {
+	    return write_no_mem();
+	}
     }
     /*NOTREACHED*/
 }
@@ -226,7 +244,7 @@ Perl_safesysrealloc(Malloc_t where,MEM_SIZE size)
 Free_t
 Perl_safesysfree(Malloc_t where)
 {
-#if defined(PERL_IMPLICIT_SYS) || defined(PERL_TRACK_MEMPOOL)
+#ifdef ALWAYS_NEED_THX
     dTHX;
 #else
     dVAR;
@@ -268,7 +286,9 @@ Perl_safesysfree(Malloc_t where)
 Malloc_t
 Perl_safesyscalloc(MEM_SIZE count, MEM_SIZE size)
 {
+#ifdef ALWAYS_NEED_THX
     dTHX;
+#endif
     Malloc_t ptr;
     MEM_SIZE total_size = 0;
 
@@ -330,9 +350,14 @@ Perl_safesyscalloc(MEM_SIZE count, MEM_SIZE size)
 #endif
 	return ptr;
     }
-    else if (PL_nomemok)
-	return NULL;
-    return write_no_mem();
+    else {
+#ifndef ALWAYS_NEED_THX
+	dTHX;
+#endif
+	if (PL_nomemok)
+	    return NULL;
+	return write_no_mem();
+    }
 }
 
 /* These must be defined when not using Perl's malloc for binary
@@ -878,37 +903,58 @@ Perl_screaminstr(pTHX_ SV *bigstr, SV *littlestr, I32 start_shift, I32 end_shift
     return NULL;
 }
 
+/*
+=for apidoc foldEQ
+
+Returns true if the leading len bytes of the strings s1 and s2 are the same
+case-insensitively; false otherwise.  Uppercase and lowercase ASCII range bytes
+match themselves and their opposite case counterparts.  Non-cased and non-ASCII
+range bytes match only themselves.
+
+=cut
+*/
+
+
 I32
-Perl_ibcmp(const char *s1, const char *s2, register I32 len)
+Perl_foldEQ(const char *s1, const char *s2, register I32 len)
 {
     register const U8 *a = (const U8 *)s1;
     register const U8 *b = (const U8 *)s2;
 
-    PERL_ARGS_ASSERT_IBCMP;
+    PERL_ARGS_ASSERT_FOLDEQ;
 
     while (len--) {
 	if (*a != *b && *a != PL_fold[*b])
-	    return 1;
+	    return 0;
 	a++,b++;
     }
-    return 0;
+    return 1;
 }
 
+/*
+=for apidoc foldEQ_locale
+
+Returns true if the leading len bytes of the strings s1 and s2 are the same
+case-insensitively in the current locale; false otherwise.
+
+=cut
+*/
+
 I32
-Perl_ibcmp_locale(const char *s1, const char *s2, register I32 len)
+Perl_foldEQ_locale(const char *s1, const char *s2, register I32 len)
 {
     dVAR;
     register const U8 *a = (const U8 *)s1;
     register const U8 *b = (const U8 *)s2;
 
-    PERL_ARGS_ASSERT_IBCMP_LOCALE;
+    PERL_ARGS_ASSERT_FOLDEQ_LOCALE;
 
     while (len--) {
 	if (*a != *b && *a != PL_fold_locale[*b])
-	    return 1;
+	    return 0;
 	a++,b++;
     }
-    return 0;
+    return 1;
 }
 
 /* copy a string to a safe spot */
@@ -1124,6 +1170,21 @@ Perl_vform(pTHX_ const char *pat, va_list *args)
     return SvPVX(sv);
 }
 
+/*
+=for apidoc Am|SV *|mess|const char *pat|...
+
+Take a sprintf-style format pattern and argument list.  These are used to
+generate a string message.  If the message does not end with a newline,
+then it will be extended with some indication of the current location
+in the code, as described for L</mess_sv>.
+
+Normally, the resulting message is returned in a new mortal SV.
+During global destruction a single SV may be shared between uses of
+this function.
+
+=cut
+*/
+
 #if defined(PERL_IMPLICIT_CONTEXT)
 SV *
 Perl_mess_nocontext(const char *pat, ...)
@@ -1186,15 +1247,57 @@ S_closest_cop(pTHX_ const COP *cop, const OP *o)
     return NULL;
 }
 
+/*
+=for apidoc Am|SV *|mess_sv|SV *basemsg|bool consume
+
+Expands a message, intended for the user, to include an indication of
+the current location in the code, if the message does not already appear
+to be complete.
+
+C<basemsg> is the initial message or object.  If it is a reference, it
+will be used as-is and will be the result of this function.  Otherwise it
+is used as a string, and if it already ends with a newline, it is taken
+to be complete, and the result of this function will be the same string.
+If the message does not end with a newline, then a segment such as C<at
+foo.pl line 37> will be appended, and possibly other clauses indicating
+the current state of execution.  The resulting message will end with a
+dot and a newline.
+
+Normally, the resulting message is returned in a new mortal SV.
+During global destruction a single SV may be shared between uses of this
+function.  If C<consume> is true, then the function is permitted (but not
+required) to modify and return C<basemsg> instead of allocating a new SV.
+
+=cut
+*/
+
 SV *
-Perl_vmess(pTHX_ const char *pat, va_list *args)
+Perl_mess_sv(pTHX_ SV *basemsg, bool consume)
 {
     dVAR;
-    SV * const sv = mess_alloc();
+    SV *sv;
 
-    PERL_ARGS_ASSERT_VMESS;
+    PERL_ARGS_ASSERT_MESS_SV;
 
-    sv_vsetpvfn(sv, pat, strlen(pat), args, NULL, 0, NULL);
+    if (SvROK(basemsg)) {
+	if (consume) {
+	    sv = basemsg;
+	}
+	else {
+	    sv = mess_alloc();
+	    sv_setsv(sv, basemsg);
+	}
+	return sv;
+    }
+
+    if (SvPOK(basemsg) && consume) {
+	sv = basemsg;
+    }
+    else {
+	sv = mess_alloc();
+	sv_copypv(sv, basemsg);
+    }
+
     if (!SvCUR(sv) || *(SvEND(sv) - 1) != '\n') {
 	/*
 	 * Try and find the file and line for PL_op.  This will usually be
@@ -1226,6 +1329,34 @@ Perl_vmess(pTHX_ const char *pat, va_list *args)
 	sv_catpvs(sv, ".\n");
     }
     return sv;
+}
+
+/*
+=for apidoc Am|SV *|vmess|const char *pat|va_list *args
+
+C<pat> and C<args> are a sprintf-style format pattern and encapsulated
+argument list.  These are used to generate a string message.  If the
+message does not end with a newline, then it will be extended with
+some indication of the current location in the code, as described for
+L</mess_sv>.
+
+Normally, the resulting message is returned in a new mortal SV.
+During global destruction a single SV may be shared between uses of
+this function.
+
+=cut
+*/
+
+SV *
+Perl_vmess(pTHX_ const char *pat, va_list *args)
+{
+    dVAR;
+    SV * const sv = mess_alloc();
+
+    PERL_ARGS_ASSERT_VMESS;
+
+    sv_vsetpvfn(sv, pat, strlen(pat), args, NULL, 0, NULL);
+    return mess_sv(sv, 1);
 }
 
 void
@@ -1279,10 +1410,26 @@ Perl_write_to_stderr(pTHX_ SV* msv)
     }
 }
 
-/* Common code used by vcroak, vdie, vwarn and vwarner  */
+/*
+=head1 Warning and Dieing
+*/
+
+/* Common code used in dieing and warning */
+
+STATIC SV *
+S_with_queued_errors(pTHX_ SV *ex)
+{
+    PERL_ARGS_ASSERT_WITH_QUEUED_ERRORS;
+    if (PL_errors && SvCUR(PL_errors) && !SvROK(ex)) {
+	sv_catsv(PL_errors, ex);
+	ex = sv_mortalcopy(PL_errors);
+	SvCUR_set(PL_errors, 0);
+    }
+    return ex;
+}
 
 STATIC bool
-S_vdie_common(pTHX_ SV *message, bool warn)
+S_invoke_exception_hook(pTHX_ SV *ex, bool warn)
 {
     dVAR;
     HV *stash;
@@ -1292,7 +1439,8 @@ S_vdie_common(pTHX_ SV *message, bool warn)
     /* sv_2cv might call Perl_croak() or Perl_warner() */
     SV * const oldhook = *hook;
 
-    assert(oldhook);
+    if (!oldhook)
+	return FALSE;
 
     ENTER;
     SAVESPTR(*hook);
@@ -1301,7 +1449,7 @@ S_vdie_common(pTHX_ SV *message, bool warn)
     LEAVE;
     if (cv && !CvDEPTH(cv) && (CvROOT(cv) || CvXSUB(cv))) {
 	dSP;
-	SV *msg;
+	SV *exarg;
 
 	ENTER;
 	save_re_context();
@@ -1309,18 +1457,13 @@ S_vdie_common(pTHX_ SV *message, bool warn)
 	    SAVESPTR(*hook);
 	    *hook = NULL;
 	}
-	if (warn || message) {
-	    msg = newSVsv(message);
-	    SvREADONLY_on(msg);
-	    SAVEFREESV(msg);
-	}
-	else {
-	    msg = ERRSV;
-	}
+	exarg = newSVsv(ex);
+	SvREADONLY_on(exarg);
+	SAVEFREESV(exarg);
 
 	PUSHSTACKi(warn ? PERLSI_WARNHOOK : PERLSI_DIEHOOK);
 	PUSHMARK(SP);
-	XPUSHs(msg);
+	XPUSHs(exarg);
 	PUTBACK;
 	call_sv(MUTABLE_SV(cv), G_DISCARD);
 	POPSTACK;
@@ -1330,80 +1473,146 @@ S_vdie_common(pTHX_ SV *message, bool warn)
     return FALSE;
 }
 
-STATIC SV *
-S_vdie_croak_common(pTHX_ const char* pat, va_list* args)
+/*
+=for apidoc Am|OP *|die_sv|SV *baseex
+
+Behaves the same as L</croak_sv>, except for the return type.
+It should be used only where the C<OP *> return type is required.
+The function never actually returns.
+
+=cut
+*/
+
+OP *
+Perl_die_sv(pTHX_ SV *baseex)
 {
-    dVAR;
-    SV *message;
-
-    if (pat) {
-	SV * const msv = vmess(pat, args);
-	if (PL_errors && SvCUR(PL_errors)) {
-	    sv_catsv(PL_errors, msv);
-	    message = sv_mortalcopy(PL_errors);
-	    SvCUR_set(PL_errors, 0);
-	}
-	else
-	    message = msv;
-    }
-    else {
-	message = NULL;
-    }
-
-    if (PL_diehook) {
-	S_vdie_common(aTHX_ message, FALSE);
-    }
-    return message;
-}
-
-static OP *
-S_vdie(pTHX_ const char* pat, va_list *args)
-{
-    dVAR;
-    SV *message;
-
-    message = vdie_croak_common(pat, args);
-
-    die_where(message);
+    PERL_ARGS_ASSERT_DIE_SV;
+    croak_sv(baseex);
     /* NOTREACHED */
     return NULL;
 }
+
+/*
+=for apidoc Am|OP *|die|const char *pat|...
+
+Behaves the same as L</croak>, except for the return type.
+It should be used only where the C<OP *> return type is required.
+The function never actually returns.
+
+=cut
+*/
 
 #if defined(PERL_IMPLICIT_CONTEXT)
 OP *
 Perl_die_nocontext(const char* pat, ...)
 {
     dTHX;
-    OP *o;
     va_list args;
     va_start(args, pat);
-    o = vdie(pat, &args);
+    vcroak(pat, &args);
+    /* NOTREACHED */
     va_end(args);
-    return o;
+    return NULL;
 }
 #endif /* PERL_IMPLICIT_CONTEXT */
 
 OP *
 Perl_die(pTHX_ const char* pat, ...)
 {
-    OP *o;
     va_list args;
     va_start(args, pat);
-    o = vdie(pat, &args);
+    vcroak(pat, &args);
+    /* NOTREACHED */
     va_end(args);
-    return o;
+    return NULL;
 }
+
+/*
+=for apidoc Am|void|croak_sv|SV *baseex
+
+This is an XS interface to Perl's C<die> function.
+
+C<baseex> is the error message or object.  If it is a reference, it
+will be used as-is.  Otherwise it is used as a string, and if it does
+not end with a newline then it will be extended with some indication of
+the current location in the code, as described for L</mess_sv>.
+
+The error message or object will be used as an exception, by default
+returning control to the nearest enclosing C<eval>, but subject to
+modification by a C<$SIG{__DIE__}> handler.  In any case, the C<croak_sv>
+function never returns normally.
+
+To die with a simple string message, the L</croak> function may be
+more convenient.
+
+=cut
+*/
+
+void
+Perl_croak_sv(pTHX_ SV *baseex)
+{
+    SV *ex = with_queued_errors(mess_sv(baseex, 0));
+    PERL_ARGS_ASSERT_CROAK_SV;
+    invoke_exception_hook(ex, FALSE);
+    die_unwind(ex);
+}
+
+/*
+=for apidoc Am|void|vcroak|const char *pat|va_list *args
+
+This is an XS interface to Perl's C<die> function.
+
+C<pat> and C<args> are a sprintf-style format pattern and encapsulated
+argument list.  These are used to generate a string message.  If the
+message does not end with a newline, then it will be extended with
+some indication of the current location in the code, as described for
+L</mess_sv>.
+
+The error message will be used as an exception, by default
+returning control to the nearest enclosing C<eval>, but subject to
+modification by a C<$SIG{__DIE__}> handler.  In any case, the C<croak>
+function never returns normally.
+
+For historical reasons, if C<pat> is null then the contents of C<ERRSV>
+(C<$@>) will be used as an error message or object instead of building an
+error message from arguments.  If you want to throw a non-string object,
+or build an error message in an SV yourself, it is preferable to use
+the L</croak_sv> function, which does not involve clobbering C<ERRSV>.
+
+=cut
+*/
 
 void
 Perl_vcroak(pTHX_ const char* pat, va_list *args)
 {
-    dVAR;
-    SV *msv;
-
-    msv = S_vdie_croak_common(aTHX_ pat, args);
-
-    die_where(msv);
+    SV *ex = with_queued_errors(pat ? vmess(pat, args) : mess_sv(ERRSV, 0));
+    invoke_exception_hook(ex, FALSE);
+    die_unwind(ex);
 }
+
+/*
+=for apidoc Am|void|croak|const char *pat|...
+
+This is an XS interface to Perl's C<die> function.
+
+Take a sprintf-style format pattern and argument list.  These are used to
+generate a string message.  If the message does not end with a newline,
+then it will be extended with some indication of the current location
+in the code, as described for L</mess_sv>.
+
+The error message will be used as an exception, by default
+returning control to the nearest enclosing C<eval>, but subject to
+modification by a C<$SIG{__DIE__}> handler.  In any case, the C<croak>
+function never returns normally.
+
+For historical reasons, if C<pat> is null then the contents of C<ERRSV>
+(C<$@>) will be used as an error message or object instead of building an
+error message from arguments.  If you want to throw a non-string object,
+or build an error message in an SV yourself, it is preferable to use
+the L</croak_sv> function, which does not involve clobbering C<ERRSV>.
+
+=cut
+*/
 
 #if defined(PERL_IMPLICIT_CONTEXT)
 void
@@ -1418,26 +1627,6 @@ Perl_croak_nocontext(const char *pat, ...)
 }
 #endif /* PERL_IMPLICIT_CONTEXT */
 
-/*
-=head1 Warning and Dieing
-
-=for apidoc croak
-
-This is the XSUB-writer's interface to Perl's C<die> function.
-Normally call this function the same way you call the C C<printf>
-function.  Calling C<croak> returns control directly to Perl,
-sidestepping the normal C order of execution. See C<warn>.
-
-If you want to throw an exception object, assign the object to
-C<$@> and then pass C<NULL> to croak():
-
-   errsv = get_sv("@", GV_ADD);
-   sv_setsv(errsv, exception_object);
-   croak(NULL);
-
-=cut
-*/
-
 void
 Perl_croak(pTHX_ const char *pat, ...)
 {
@@ -1448,21 +1637,95 @@ Perl_croak(pTHX_ const char *pat, ...)
     va_end(args);
 }
 
+/*
+=for apidoc Am|void|croak_no_modify
+
+Exactly equivalent to C<Perl_croak(aTHX_ "%s", PL_no_modify)>, but generates
+terser object code than using C<Perl_croak>. Less code used on exception code
+paths reduces CPU cache pressure.
+
+=cut
+*/
+
+void
+Perl_croak_no_modify(pTHX)
+{
+    Perl_croak(aTHX_ "%s", PL_no_modify);
+}
+
+/*
+=for apidoc Am|void|warn_sv|SV *baseex
+
+This is an XS interface to Perl's C<warn> function.
+
+C<baseex> is the error message or object.  If it is a reference, it
+will be used as-is.  Otherwise it is used as a string, and if it does
+not end with a newline then it will be extended with some indication of
+the current location in the code, as described for L</mess_sv>.
+
+The error message or object will by default be written to standard error,
+but this is subject to modification by a C<$SIG{__WARN__}> handler.
+
+To warn with a simple string message, the L</warn> function may be
+more convenient.
+
+=cut
+*/
+
+void
+Perl_warn_sv(pTHX_ SV *baseex)
+{
+    SV *ex = mess_sv(baseex, 0);
+    PERL_ARGS_ASSERT_WARN_SV;
+    if (!invoke_exception_hook(ex, TRUE))
+	write_to_stderr(ex);
+}
+
+/*
+=for apidoc Am|void|vwarn|const char *pat|va_list *args
+
+This is an XS interface to Perl's C<warn> function.
+
+C<pat> and C<args> are a sprintf-style format pattern and encapsulated
+argument list.  These are used to generate a string message.  If the
+message does not end with a newline, then it will be extended with
+some indication of the current location in the code, as described for
+L</mess_sv>.
+
+The error message or object will by default be written to standard error,
+but this is subject to modification by a C<$SIG{__WARN__}> handler.
+
+Unlike with L</vcroak>, C<pat> is not permitted to be null.
+
+=cut
+*/
+
 void
 Perl_vwarn(pTHX_ const char* pat, va_list *args)
 {
-    dVAR;
-    SV * const msv = vmess(pat, args);
-
+    SV *ex = vmess(pat, args);
     PERL_ARGS_ASSERT_VWARN;
-
-    if (PL_warnhook) {
-	if (vdie_common(msv, TRUE))
-	    return;
-    }
-
-    write_to_stderr(msv);
+    if (!invoke_exception_hook(ex, TRUE))
+	write_to_stderr(ex);
 }
+
+/*
+=for apidoc Am|void|warn|const char *pat|...
+
+This is an XS interface to Perl's C<warn> function.
+
+Take a sprintf-style format pattern and argument list.  These are used to
+generate a string message.  If the message does not end with a newline,
+then it will be extended with some indication of the current location
+in the code, as described for L</mess_sv>.
+
+The error message or object will by default be written to standard error,
+but this is subject to modification by a C<$SIG{__WARN__}> handler.
+
+Unlike with L</croak>, C<pat> is not permitted to be null.
+
+=cut
+*/
 
 #if defined(PERL_IMPLICIT_CONTEXT)
 void
@@ -1476,15 +1739,6 @@ Perl_warn_nocontext(const char *pat, ...)
     va_end(args);
 }
 #endif /* PERL_IMPLICIT_CONTEXT */
-
-/*
-=for apidoc warn
-
-This is the XSUB-writer's interface to Perl's C<warn> function.  Call this
-function the same way you call the C C<printf> function.  See C<croak>.
-
-=cut
-*/
 
 void
 Perl_warn(pTHX_ const char *pat, ...)
@@ -1553,11 +1807,8 @@ Perl_vwarner(pTHX_ U32  err, const char* pat, va_list* args)
     if (PL_warnhook == PERL_WARNHOOK_FATAL || ckDEAD(err)) {
 	SV * const msv = vmess(pat, args);
 
-	if (PL_diehook) {
-	    assert(msv);
-	    S_vdie_common(aTHX_ msv, FALSE);
-	}
-	die_where(msv);
+	invoke_exception_hook(msv, FALSE);
+	die_unwind(msv);
     }
     else {
 	Perl_vwarn(aTHX_ pat, args);
@@ -3643,45 +3894,46 @@ Perl_report_evil_fh(pTHX_ const GV *gv, const IO *io, I32 op)
     }
 }
 
-#ifdef EBCDIC
-/* in ASCII order, not that it matters */
-static const char controllablechars[] = "?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
+/* XXX Add documentation after final interface and behavior is decided */
+/* May want to show context for error, so would pass Perl_bslash_c(pTHX_ const char* current, const char* start, const bool output_warning)
+    U8 source = *current;
 
-int
-Perl_ebcdic_control(pTHX_ int ch)
+    May want to add eg, WARN_REGEX
+*/
+
+char
+Perl_grok_bslash_c(pTHX_ const char source, const bool output_warning)
 {
-    if (ch > 'a') {
-	const char *ctlp;
+    
+    U8 result;
 
-	if (islower(ch))
-	    ch = toupper(ch);
-
-	if ((ctlp = strchr(controllablechars, ch)) == 0) {
-	    Perl_die(aTHX_ "unrecognised control character '%c'\n", ch);
-	}
-
-	if (ctlp == controllablechars)
-	    return('\177'); /* DEL */
-	else
-	    return((unsigned char)(ctlp - controllablechars - 1));
-    } else { /* Want uncontrol */
-	if (ch == '\177' || ch == -1)
-	    return('?');
-	else if (ch == '\157')
-	    return('\177');
-	else if (ch == '\174')
-	    return('\000');
-	else if (ch == '^')    /* '\137' in 1047, '\260' in 819 */
-	    return('\036');
-	else if (ch == '\155')
-	    return('\037');
-	else if (0 < ch && ch < (sizeof(controllablechars) - 1))
-	    return(controllablechars[ch+1]);
-	else
-	    Perl_die(aTHX_ "invalid control request: '\\%03o'\n", ch & 0xFF);
+    if (! isASCII(source)) {
+	Perl_croak(aTHX_ "Character following \"\\c\" must be ASCII");
     }
+
+    result = toCTRL(source);
+    if (! isCNTRL(result)) {
+	if (source == '{') {
+	    Perl_croak(aTHX_ "It is proposed that \"\\c{\" no longer be valid. It has historically evaluated to\n \";\".  If you disagree with this proposal, send email to perl5-porters@perl.org\nOtherwise, or in the meantime, you can work around this failure by changing\n\"\\c{\" to \";\"");
+	}
+	else if (output_warning) {
+	    U8 clearer[3];
+	    U8 i = 0;
+	    if (! isALNUM(result)) {
+		clearer[i++] = '\\';
+	    }
+	    clearer[i++] = result;
+	    clearer[i++] = '\0';
+
+	    Perl_ck_warner_d(aTHX_ packWARN(WARN_DEPRECATED),
+			    "\"\\c%c\" more clearly written simply as \"%s\"",
+			    source,
+			    clearer);
+	}
+    }
+
+    return result;
 }
-#endif
 
 /* To workaround core dumps from the uninitialised tm_zone we get the
  * system to give us a reasonable struct to copy.  This fix means that
@@ -4300,7 +4552,7 @@ dotted_decimal_version:
 	    saw_decimal++;
 	    d++;
 	}
-	else if (!*d || *d == ';' || isSPACE(*d) || *d == '}') {
+	else if (!*d || *d == ';' || isSPACE(*d) || *d == '{' || *d == '}') {
 	    if ( d == s ) {
 		/* found nothing */
 		BADVERSION(s,errstr,"Invalid version format (version required)");
@@ -4331,7 +4583,7 @@ dotted_decimal_version:
 
 	/* scan the fractional part after the decimal point*/
 
-	if (!isDIGIT(*d) && (strict || ! (!*d || *d == ';' || isSPACE(*d) || *d == '}') )) {
+	if (!isDIGIT(*d) && (strict || ! (!*d || *d == ';' || isSPACE(*d) || *d == '{' || *d == '}') )) {
 		/* strict or lax-but-not-the-end */
 		BADVERSION(s,errstr,"Invalid version format (fractional part required)");
 	}
@@ -4369,7 +4621,7 @@ version_prescan_finish:
     while (isSPACE(*d))
 	d++;
 
-    if (!isDIGIT(*d) && (! (!*d || *d == ';' || *d == '}') )) {
+    if (!isDIGIT(*d) && (! (!*d || *d == ';' || *d == '{' || *d == '}') )) {
 	/* trailing non-numeric data */
 	BADVERSION(s,errstr,"Invalid version format (non-numeric data)");
     }

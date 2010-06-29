@@ -6,7 +6,15 @@
 
 # Needs 'no overloading' to run faster on miniperl.  Code commented out at the
 # subroutine objaddr can be used instead to work as far back (untested) as
-# 5.8: needs pack "U".
+# 5.8: needs pack "U".  But almost all occurrences of objaddr have been
+# removed in favor of using 'no overloading'.  You also would have to go
+# through and replace occurrences like:
+#       my $addr; { no overloading; $addr = 0+$self; }
+# with
+#       my $addr = main::objaddr $self;
+# (or reverse commit 9b01bafde4b022706c3d6f947a0963f821b2e50b
+# that instituted this change.)
+
 require 5.010_001;
 use strict;
 use warnings;
@@ -602,6 +610,10 @@ my $glob_list = 0;             # ? Should we try to include unknown .txt files
                                # in the input.
 my $output_range_counts = 1;   # ? Should we include the number of code points
                                # in ranges in the output
+my $output_names = 0;          # ? Should character names be in the output
+my @viacode;                   # Contains the 1 million character names, if
+                               # $output_names is true
+
 # Verbosity levels; 0 is quiet
 my $NORMAL_VERBOSITY = 1;
 my $PROGRESS = 2;
@@ -657,6 +669,9 @@ while (@ARGV) {
     elsif ($arg eq '-c') {
         $output_range_counts = ! $output_range_counts
     }
+    elsif ($arg eq '-output_names') {
+        $output_names = 1;
+    }
     else {
         my $with_c = 'with';
         $with_c .= 'out' if $output_range_counts;   # Complements the state
@@ -681,6 +696,9 @@ usage: $0 [-c|-p|-q|-v|-w] [-C dir] [-L filelist] [ -P pod_dir ]
   -maketest   : Make test script 'TestProp.pl' in current (or -C directory),
                 overrides -T
   -makelist   : Rewrite the file list $file_list based on current setup
+  -output_names : Output each character's name in the table files; useful for
+                doing what-ifs, looking at diffs; is slow, memory intensive,
+                resulting tables are usable but very large.
   -check A B  : Executes $0 only if A and B are the same
 END
     }
@@ -1431,7 +1449,7 @@ package main;
             # Use typeglob to give the anonymous subroutine the name we want
             *$destroy_name = sub {
                 my $self = shift;
-                my $addr = main::objaddr($self);
+                my $addr; { no overloading; $addr = 0+$self; }
 
                 $self->$destroy_callback if $destroy_callback;
                 foreach my $field (keys %{$package_fields{$package}}) {
@@ -1530,16 +1548,15 @@ package main;
                     return Carp::carp_too_few_args(\@_, 2) if main::DEBUG && @_ < 2;
                     my $self = shift;
                     my $value = shift;
+                    my $addr; { no overloading; $addr = 0+$self; }
                     Carp::carp_extra_args(\@_) if main::DEBUG && @_;
                     if (ref $value) {
-                        return if grep { $value == $_ }
-                                            @{$field->{main::objaddr $self}};
+                        return if grep { $value == $_ } @{$field->{$addr}};
                     }
                     else {
-                        return if grep { $value eq $_ }
-                                            @{$field->{main::objaddr $self}};
+                        return if grep { $value eq $_ } @{$field->{$addr}};
                     }
-                    push @{$field->{main::objaddr $self}}, $value;
+                    push @{$field->{$addr}}, $value;
                     return;
                 }
             }
@@ -1565,7 +1582,7 @@ package main;
                     *$subname = sub {
                         use strict "refs";
                         Carp::carp_extra_args(\@_) if main::DEBUG && @_ > 1;
-                        my $addr = main::objaddr $_[0];
+                        my $addr; { no overloading; $addr = 0+$_[0]; }
                         if (ref $field->{$addr} ne 'ARRAY') {
                             my $type = ref $field->{$addr};
                             $type = 'scalar' unless $type;
@@ -1587,7 +1604,8 @@ package main;
                     *$subname = sub {
                         use strict "refs";
                         Carp::carp_extra_args(\@_) if main::DEBUG && @_ > 1;
-                        return $field->{main::objaddr $_[0]};
+                        no overloading;
+                        return $field->{0+$_[0]};
                     }
                 }
             }
@@ -1601,7 +1619,8 @@ package main;
                         Carp::carp_extra_args(\@_) if @_ > 2;
                     }
                     # $self is $_[0]; $value is $_[1]
-                    $field->{main::objaddr $_[0]} = $_[1];
+                    no overloading;
+                    $field->{0+$_[0]} = $_[1];
                     return;
                 }
             }
@@ -1761,7 +1780,7 @@ sub trace { return main::trace(@_); }
         my $class = shift;
 
         my $self = bless \do{ my $anonymous_scalar }, $class;
-        my $addr = main::objaddr($self);
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # Set defaults
         $handler{$addr} = \&main::process_generic_property_file;
@@ -1852,7 +1871,7 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         my $file = $file{$addr};
 
@@ -2022,7 +2041,7 @@ END
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # Here the file is open (or if the handle is not a ref, is an open
         # 'virtual' file).  Get the next line; any inserted lines get priority
@@ -2167,7 +2186,7 @@ END
 #        # an each_line_handler() on the line.
 #
 #        my $self = shift;
-#        my $addr = main::objaddr $self;
+#        my $addr; { no overloading; $addr = 0+$self; }
 #
 #        foreach my $inserted_ref (@{$added_lines{$addr}}) {
 #            my ($adjusted, $line) = @{$inserted_ref};
@@ -2208,7 +2227,8 @@ END
         # Each inserted line is an array, with the first element being 0 to
         # indicate that this line hasn't been adjusted, and needs to be
         # processed.
-        push @{$added_lines{main::objaddr $self}}, map { [ 0, $_ ] } @_;
+        no overloading;
+        push @{$added_lines{0+$self}}, map { [ 0, $_ ] } @_;
         return;
     }
 
@@ -2231,7 +2251,8 @@ END
 
         # Each inserted line is an array, with the first element being 1 to
         # indicate that this line has been adjusted
-        push @{$added_lines{main::objaddr $self}}, map { [ 1, $_ ] } @_;
+        no overloading;
+        push @{$added_lines{0+$self}}, map { [ 1, $_ ] } @_;
         return;
     }
 
@@ -2244,7 +2265,7 @@ END
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # If not accepting a list return, just return the first one.
         return shift @{$missings{$addr}} unless wantarray;
@@ -2257,7 +2278,9 @@ END
     sub _insert_property_into_line {
         # Add a property field to $_, if this file requires it.
 
-        my $property = $property{main::objaddr shift};
+        my $self = shift;
+        my $addr; { no overloading; $addr = 0+$self; }
+        my $property = $property{$addr};
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
         $_ =~ s/(;|$)/; $property$1/;
@@ -2275,7 +2298,7 @@ END
         my $message = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         $message = 'Unexpected line' unless $message;
 
@@ -2286,7 +2309,7 @@ END
         # increment the count of how many times it has occurred
         unless ($errors{$addr}->{$message}) {
             Carp::my_carp("$message in '$_' in "
-                            . $file{main::objaddr $self}
+                            . $file{$addr}
                             . " at line $..  Skipping this line;");
             $errors{$addr}->{$message} = 1;
         }
@@ -2340,7 +2363,7 @@ package Multi_Default;
         my $class = shift;
 
         my $self = bless \do{my $anonymous_scalar}, $class;
-        my $addr = main::objaddr($self);
+        my $addr; { no overloading; $addr = 0+$self; }
 
         while (@_ > 1) {
             my $default = shift;
@@ -2358,7 +2381,7 @@ package Multi_Default;
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         return each %{$class_defaults{$addr}};
     }
@@ -2405,7 +2428,7 @@ package Alias;
         my $class = shift;
 
         my $self = bless \do { my $anonymous_scalar }, $class;
-        my $addr = main::objaddr($self);
+        my $addr; { no overloading; $addr = 0+$self; }
 
         $name{$addr} = shift;
         $loose_match{$addr} = shift;
@@ -2467,7 +2490,7 @@ sub trace { return main::trace(@_); }
         my $class = shift;
 
         my $self = bless \do { my $anonymous_scalar }, $class;
-        my $addr = main::objaddr($self);
+        my $addr; { no overloading; $addr = 0+$self; }
 
         $start{$addr} = shift;
         $end{$addr} = shift;
@@ -2497,7 +2520,7 @@ sub trace { return main::trace(@_); }
 
     sub _operator_stringify {
         my $self = shift;
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # Output it like '0041..0065 (value)'
         my $return = sprintf("%04X", $start{$addr})
@@ -2520,7 +2543,7 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         return $standard_form{$addr} if defined $standard_form{$addr};
         return $value{$addr};
@@ -2533,7 +2556,7 @@ sub trace { return main::trace(@_); }
         my $indent = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         my $return = $indent
                     . sprintf("%04X", $start{$addr})
@@ -2567,13 +2590,6 @@ package _Range_List_Base;
 
 # There are a number of methods to manipulate range lists, and some operators
 # are overloaded to handle them.
-
-# Because of the slowness of pure Perl objaddr() on miniperl, and measurements
-# showing this package was using a lot of real time calculating that, the code
-# was changed to only calculate it once per call stack.  This is done by
-# consistently using the package variable $addr in routines, and only calling
-# objaddr() if it isn't defined, and setting that to be local, so that callees
-# will have it already.  It would be a good thing to change this. XXX
 
 sub trace { return main::trace(@_); }
 
@@ -2622,7 +2638,7 @@ sub trace { return main::trace(@_); }
         return _union($class, $initialize, %args) if defined $initialize;
 
         $self = bless \do { my $anonymous_scalar }, $class;
-        local $addr = main::objaddr($self);
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # Optional parent object, only for debug info.
         $owner_name_of{$addr} = delete $args{'Owner'};
@@ -2654,7 +2670,7 @@ sub trace { return main::trace(@_); }
 
     sub _operator_stringify {
         my $self = shift;
-        local $addr = main::objaddr($self) if !defined $addr;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         return "Range_List attached to '$owner_name_of{$addr}'"
                                                 if $owner_name_of{$addr};
@@ -2712,7 +2728,8 @@ sub trace { return main::trace(@_); }
             if (! defined $arg) {
                 my $message = "";
                 if (defined $self) {
-                    $message .= $owner_name_of{main::objaddr $self};
+                    no overloading;
+                    $message .= $owner_name_of{0+$self};
                 }
                 Carp::my_carp_bug($message .= "Undefined argument to _union.  No union done.");
                 return;
@@ -2733,7 +2750,8 @@ sub trace { return main::trace(@_); }
             else {
                 my $message = "";
                 if (defined $self) {
-                    $message .= $owner_name_of{main::objaddr $self};
+                    no overloading;
+                    $message .= $owner_name_of{0+$self};
                 }
                 Carp::my_carp_bug($message . "Cannot take the union of a $type.  No union done.");
                 return;
@@ -2773,9 +2791,8 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        local $addr = main::objaddr($self) if ! defined $addr;
-
-        return scalar @{$ranges{$addr}};
+        no overloading;
+        return scalar @{$ranges{0+$self}};
     }
 
     sub min {
@@ -2788,7 +2805,7 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        local $addr = main::objaddr($self) if ! defined $addr;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # If the range list is empty, return a large value that isn't adjacent
         # to any that could be in the range list, for simpler tests
@@ -2805,8 +2822,6 @@ sub trace { return main::trace(@_); }
         my $codepoint = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        local $addr = main::objaddr $self if ! defined $addr;
-
         my $i = $self->_search_ranges($codepoint);
         return 0 unless defined $i;
 
@@ -2814,7 +2829,8 @@ sub trace { return main::trace(@_); }
         #   range[$i-1]->end < $codepoint <= range[$i]->end
         # So is in the table if and only iff it is at least the start position
         # of range $i.
-        return 0 if $ranges{$addr}->[$i]->start > $codepoint;
+        no overloading;
+        return 0 if $ranges{0+$self}->[$i]->start > $codepoint;
         return $i + 1;
     }
 
@@ -2825,13 +2841,12 @@ sub trace { return main::trace(@_); }
         my $codepoint = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        local $addr = main::objaddr $self if ! defined $addr;
-
         my $i = $self->contains($codepoint);
         return unless $i;
 
         # contains() returns 1 beyond where we should look
-        return $ranges{$addr}->[$i-1]->value;
+        no overloading;
+        return $ranges{0+$self}->[$i-1]->value;
     }
 
     sub _search_ranges {
@@ -2845,7 +2860,7 @@ sub trace { return main::trace(@_); }
         my $code_point = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        local $addr = main::objaddr $self if ! defined $addr;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         return if $code_point > $max{$addr};
         my $r = $ranges{$addr};                # The current list of ranges
@@ -3019,7 +3034,7 @@ sub trace { return main::trace(@_); }
 
         Carp::carp_extra_args(\%args) if main::DEBUG && %args;
 
-        local $addr = main::objaddr($self) if ! defined $addr;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         if ($operation ne '+' && $operation ne '-') {
             Carp::my_carp_bug("$owner_name_of{$addr}First parameter to _add_delete must be '+' or '-'.  No action taken.");
@@ -3603,9 +3618,8 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        local $addr = main::objaddr $self if ! defined $addr;
-
-        undef $each_range_iterator{$addr};
+        no overloading;
+        undef $each_range_iterator{0+$self};
         return;
     }
 
@@ -3616,7 +3630,7 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        local $addr = main::objaddr($self) if ! defined $addr;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         return if $self->is_empty;
 
@@ -3633,7 +3647,7 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        local $addr = main::objaddr($self) if ! defined $addr;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         my $count = 0;
         foreach my $range (@{$ranges{$addr}}) {
@@ -3656,8 +3670,8 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        local $addr = main::objaddr($self) if ! defined $addr;
-        return scalar @{$ranges{$addr}} == 0;
+        no overloading;
+        return scalar @{$ranges{0+$self}} == 0;
     }
 
     sub hash {
@@ -3668,7 +3682,7 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        local $addr = main::objaddr($self) if ! defined $addr;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # These are quickly computable.  Return looks like 'min..max;count'
         return $self->min . "..$max{$addr};" . scalar @{$ranges{$addr}};
@@ -3940,8 +3954,6 @@ sub trace { return main::trace(@_); }
         return $self->_add_delete('+', $start, $end, "");
     }
 
-    my $non_ASCII = (ord('A') != 65);   # Assumes test on same platform
-
     sub is_code_point_usable {
         # This used only for making the test script.  See if the input
         # proposed trial code point is one that Perl will handle.  If second
@@ -3953,15 +3965,6 @@ sub trace { return main::trace(@_); }
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
         return 0 if $code < 0;                # Never use a negative
-
-        # For non-ASCII, we shun the characters that don't have Perl encoding-
-        # independent symbols for them.  'A' is such a symbol, so is "\n".
-        return $try_hard if $non_ASCII
-                            && $code <= 0xFF
-                            && ($code >= 0x7F
-                                || ($code >= 0x0E && $code <= 0x1F)
-                                || ($code >= 0x01 && $code <= 0x06)
-                                || $code == 0x0B);
 
         # shun null.  I'm (khw) not sure why this was done, but NULL would be
         # the character very frequently used.
@@ -3987,7 +3990,7 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr($self);
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # On first pass, don't choose less desirable code points; if no good
         # one is found, repeat, allowing a less desirable one to be selected.
@@ -4179,7 +4182,7 @@ sub trace { return main::trace(@_); }
         my $class = shift;
 
         my $self = bless \do { my $anonymous_scalar }, $class;
-        my $addr = main::objaddr($self);
+        my $addr; { no overloading; $addr = 0+$self; }
 
         my %args = @_;
 
@@ -4195,6 +4198,7 @@ sub trace { return main::trace(@_); }
         $status{$addr} = delete $args{'Status'} || $NORMAL;
         $status_info{$addr} = delete $args{'_Status_Info'} || "";
         $range_size_1{$addr} = delete $args{'Range_Size_1'} || 0;
+        $range_size_1{$addr} = 1 if $output_names;  # Make sure 1 name per line
 
         my $description = delete $args{'Description'};
         my $externally_ok = delete $args{'Externally_Ok'};
@@ -4236,7 +4240,11 @@ sub trace { return main::trace(@_); }
             # lists of properties or tables that have particular statuses; if
             # not, is normal.  The lists are prioritized so the most serious
             # ones are checked first
-            if (exists $why_suppressed{$complete_name}) {
+            if (exists $why_suppressed{$complete_name}
+                # Don't suppress if overriden
+                && ! grep { $_ eq $complete_name{$addr} }
+                                                    @output_mapped_properties)
+            {
                 $status{$addr} = $SUPPRESSED;
             }
             elsif (exists $why_deprecated{$complete_name}) {
@@ -4327,7 +4335,8 @@ sub trace { return main::trace(@_); }
     sub ranges {
         # Returns the array of ranges associated with this table.
 
-        return $range_list{main::objaddr shift}->ranges;
+        no overloading;
+        return $range_list{0+shift}->ranges;
     }
 
     sub add_alias {
@@ -4363,7 +4372,7 @@ sub trace { return main::trace(@_); }
         # release
         $name = ucfirst($name) unless $name =~ /^k[A-Z]/;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # Figure out if should be loosely matched if not already specified.
         if (! defined $loose_match) {
@@ -4424,7 +4433,8 @@ sub trace { return main::trace(@_); }
 
         # This name may be shorter than any existing ones, so clear the cache
         # of the shortest, so will have to be recalculated.
-        undef $short_name{main::objaddr $self};
+        no overloading;
+        undef $short_name{0+$self};
         return;
     }
 
@@ -4447,7 +4457,7 @@ sub trace { return main::trace(@_); }
         my $nominal_length_ptr = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # For efficiency, don't recalculate, but this means that adding new
         # aliases could change what the shortest is, so the code that does
@@ -4522,7 +4532,8 @@ sub trace { return main::trace(@_); }
         chomp $description;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        push @{$description{main::objaddr $self}}, $description;
+        no overloading;
+        push @{$description{0+$self}}, $description;
 
         return;
     }
@@ -4534,7 +4545,8 @@ sub trace { return main::trace(@_); }
         chomp $note;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        push @{$note{main::objaddr $self}}, $note;
+        no overloading;
+        push @{$note{0+$self}}, $note;
 
         return;
     }
@@ -4546,7 +4558,9 @@ sub trace { return main::trace(@_); }
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
         chomp $comment;
-        push @{$comment{main::objaddr $self}}, $comment;
+
+        no overloading;
+        push @{$comment{0+$self}}, $comment;
 
         return;
     }
@@ -4559,7 +4573,8 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my @list = @{$comment{main::objaddr $self}};
+        my $addr; { no overloading; $addr = 0+$self; }
+        my @list = @{$comment{$addr}};
         return @list if wantarray;
         my $return = "";
         foreach my $sentence (@list) {
@@ -4576,13 +4591,14 @@ sub trace { return main::trace(@_); }
         # initialization for range lists.
 
         my $self = shift;
+        my $addr; { no overloading; $addr = 0+$self; }
         my $initialization = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
         # Replace the current range list with a new one of the same exact
         # type.
-        my $class = ref $range_list{main::objaddr $self};
-        $range_list{main::objaddr $self} = $class->new(Owner => $self,
+        my $class = ref $range_list{$addr};
+        $range_list{$addr} = $class->new(Owner => $self,
                                         Initialize => $initialization);
         return;
 
@@ -4598,7 +4614,8 @@ sub trace { return main::trace(@_); }
         my $return = "";
         $return .= $DEVELOPMENT_ONLY if $compare_versions;
         $return .= $HEADER;
-        $return .= $INTERNAL_ONLY if $internal_only{main::objaddr $self};
+        no overloading;
+        $return .= $INTERNAL_ONLY if $internal_only{0+$self};
         return $return;
     }
 
@@ -4613,7 +4630,7 @@ sub trace { return main::trace(@_); }
                                      # the range
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr($self);
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # Start with the header
         my @OUT = $self->header;
@@ -4653,6 +4670,15 @@ sub trace { return main::trace(@_); }
                 if ($start == $end || $range_size_1) {
                     for my $i ($start .. $end) {
                         push @OUT, sprintf "%04X\t\t%s\n", $i, $value;
+                        if ($output_names) {
+                            if (! defined $viacode[$i]) {
+                                $viacode[$i] =
+                                    Property::property_ref('Perl_Charnames')
+                                                                ->value_of($i)
+                                    || "";
+                            }
+                            $OUT[-1] =~ s/\n/\t# $viacode[$i]\n/;
+                        }
                     }
                 }
                 else  {
@@ -4701,7 +4727,7 @@ sub trace { return main::trace(@_); }
         my $info = shift;   # Any message associated with it.
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr($self);
+        my $addr; { no overloading; $addr = 0+$self; }
 
         $status{$addr} = $status;
         $status_info{$addr} = $info;
@@ -4716,7 +4742,7 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         $locked{$addr} = "";
 
@@ -4744,7 +4770,7 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         return 0 if ! $locked{$addr};
         Carp::my_carp_bug("Can't modify a locked table. Stack trace of locking:\n$locked{$addr}\n\n");
@@ -4755,7 +4781,8 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         # Rest of parameters passed on
 
-        @{$file_path{main::objaddr $self}} = @_;
+        no overloading;
+        @{$file_path{0+$self}} = @_;
         return
     }
 
@@ -4778,7 +4805,8 @@ sub trace { return main::trace(@_); }
         *$sub = sub {
             use strict "refs";
             my $self = shift;
-            return $range_list{main::objaddr $self}->$sub(@_);
+            no overloading;
+            return $range_list{0+$self}->$sub(@_);
         }
     }
 
@@ -4793,7 +4821,8 @@ sub trace { return main::trace(@_); }
             my $self = shift;
 
             return if $self->carp_if_locked;
-            return $range_list{main::objaddr $self}->$sub(@_);
+            no overloading;
+            return $range_list{0+$self}->$sub(@_);
         }
     }
 
@@ -4899,7 +4928,7 @@ sub trace { return main::trace(@_); }
                                     _Range_List => $range_list,
                                     %args);
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         $anomalous_entries{$addr} = [];
         $core_access{$addr} = $core_access;
@@ -4951,7 +4980,7 @@ sub trace { return main::trace(@_); }
         # Can't change the table if locked.
         return if $self->carp_if_locked;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         $has_specials{$addr} = 1 if $type;
 
@@ -4969,7 +4998,7 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         return "" unless @{$anomalous_entries{$addr}};
         return join("\n", @{$anomalous_entries{$addr}}) . "\n";
@@ -4996,8 +5025,8 @@ sub trace { return main::trace(@_); }
             return;
         }
 
-        my $addr = main::objaddr $self;
-        my $other_addr = main::objaddr $other;
+        my $addr; { no overloading; $addr = 0+$self; }
+        my $other_addr; { no overloading; $other_addr = 0+$other; }
 
         local $to_trace = 0 if main::DEBUG;
 
@@ -5030,7 +5059,7 @@ sub trace { return main::trace(@_); }
         my $map = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # Convert the input to the standard equivalent, if any (won't have any
         # for $STRING properties)
@@ -5075,7 +5104,7 @@ sub trace { return main::trace(@_); }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # If overridden, use that
         return $to_output_map{$addr} if defined $to_output_map{$addr};
@@ -5120,7 +5149,7 @@ sub trace { return main::trace(@_); }
         # No sense generating a comment if aren't going to write it out.
         return if ! $self->to_output_map;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         my $property = $self->property;
 
@@ -5292,7 +5321,7 @@ END
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         my $name = $self->property->swash_name;
 
@@ -5735,7 +5764,7 @@ END
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         return $self->SUPER::write(
             ($self->property == $block)
@@ -5875,7 +5904,6 @@ sub trace { return main::trace(@_); }
         # places in this program that assume an equal sign)
         $complete = $property->full_name . "=$complete" if $property != $perl;
 
-
         my $self = $class->SUPER::new(%args,
                                       Name => $name,
                                       Complete_Name => $complete,
@@ -5883,7 +5911,7 @@ sub trace { return main::trace(@_); }
                                       _Property => $property,
                                       _Range_List => $range_list,
                                       );
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         $conflicting{$addr} = [ ];
         $equivalents{$addr} = [ ];
@@ -5924,7 +5952,7 @@ sub trace { return main::trace(@_); }
 
                         return if $self->carp_if_locked;
 
-                        my $addr = main::objaddr $self;
+                        my $addr; { no overloading; $addr = 0+$self; }
 
                         if (ref $other) {
 
@@ -5991,7 +6019,7 @@ sub trace { return main::trace(@_); }
                                         # be an optional parameter.
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # Check if the conflicting name is exactly the same as any existing
         # alias in this table (as long as there is a real object there to
@@ -6038,8 +6066,8 @@ sub trace { return main::trace(@_); }
         }
 
         # Two tables are equivalent if they have the same leader.
-        return $leader{main::objaddr $self}
-                == $leader{main::objaddr $other};
+        no overloading;
+        return $leader{0+$self} == $leader{0+$other};
         return;
     }
 
@@ -6113,9 +6141,8 @@ sub trace { return main::trace(@_); }
         my $are_equivalent = $self->is_equivalent_to($other);
         return if ! defined $are_equivalent || $are_equivalent;
 
-        my $current_leader = ($related)
-                             ? $parent{main::objaddr $self}
-                             : $leader{main::objaddr $self};
+        my $addr; { no overloading; $addr = 0+$self; }
+        my $current_leader = ($related) ? $parent{$addr} : $leader{$addr};
 
         if ($related &&
             ! $other->perl_extension
@@ -6125,8 +6152,8 @@ sub trace { return main::trace(@_); }
             $related = 0;
         }
 
-        my $leader = main::objaddr $current_leader;
-        my $other_addr = main::objaddr $other;
+        my $leader; { no overloading; $leader = 0+$current_leader; }
+        my $other_addr; { no overloading; $other_addr = 0+$other; }
 
         # Any tables that are equivalent to or children of this table must now
         # instead be equivalent to or (children) to the new leader (parent),
@@ -6141,7 +6168,7 @@ sub trace { return main::trace(@_); }
             next if $table == $other;
             trace "setting $other to be the leader of $table, status=$status" if main::DEBUG && $to_trace;
 
-            my $table_addr = main::objaddr $table;
+            my $table_addr; { no overloading; $table_addr = 0+$table; }
             $leader{$table_addr} = $other;
             $matches_all{$table_addr} = $matches_all;
             $self->_set_range_list($other->_range_list);
@@ -6195,7 +6222,7 @@ sub trace { return main::trace(@_); }
                               # an equivalent group
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $leader;
+        my $addr; { no overloading; $addr = 0+$leader; }
 
         if ($leader{$addr} != $leader) {
             Carp::my_carp_bug(<<END
@@ -6250,7 +6277,7 @@ END
                 && $parent == $property->table('N')
                 && defined (my $yes = $property->table('Y')))
             {
-                my $yes_addr = main::objaddr $yes;
+                my $yes_addr; { no overloading; $yes_addr = 0+$yes; }
                 @yes_perl_synonyms
                     = grep { $_->property == $perl }
                                     main::uniques($yes,
@@ -6266,11 +6293,12 @@ END
             my @conflicting;        # Will hold the table conflicts.
 
             # Look at the parent, any yes synonyms, and all the children
+            my $parent_addr; { no overloading; $parent_addr = 0+$parent; }
             for my $table ($parent,
                            @yes_perl_synonyms,
-                           @{$children{main::objaddr $parent}})
+                           @{$children{$parent_addr}})
             {
-                my $table_addr = main::objaddr $table;
+                my $table_addr; { no overloading; $table_addr = 0+$table; }
                 my $table_property = $table->property;
 
                 # Tables are separated by a blank line to create a grouping.
@@ -6687,7 +6715,7 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
         my %args = @_;
 
         $self = bless \do { my $anonymous_scalar }, $class;
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         $directory{$addr} = delete $args{'Directory'};
         $file{$addr} = delete $args{'File'};
@@ -6747,7 +6775,8 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
             return $self;
         }
         else {
-            $map{main::objaddr $self}->delete_range($other, $other);
+            no overloading;
+            $map{0+$self}->delete_range($other, $other);
         }
         return $self;
     }
@@ -6760,7 +6789,7 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
         my $name = shift;
         my %args = @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         my $table = $table_ref{$addr}{$name};
         my $standard_name = main::standardize($name);
@@ -6828,7 +6857,7 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
         my $name = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         return $table_ref{$addr}{$name} if defined $table_ref{$addr}{$name};
 
@@ -6846,7 +6875,8 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
         # Return a list of pointers to all the match tables attached to this
         # property
 
-        return main::uniques(values %{$table_ref{main::objaddr shift}});
+        no overloading;
+        return main::uniques(values %{$table_ref{0+shift}});
     }
 
     sub directory {
@@ -6855,7 +6885,7 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
         # priority;  'undef' is returned if the type isn't defined;
         # or $map_directory for everything else.
 
-        my $addr = main::objaddr shift;
+        my $addr; { no overloading; $addr = 0+shift; }
 
         return $directory{$addr} if defined $directory{$addr};
         return undef if $type{$addr} == $UNKNOWN;
@@ -6876,7 +6906,7 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         return $file{$addr} if defined $file{$addr};
         return $map{$addr}->external_name;
@@ -6892,7 +6922,7 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
         # The whole point of this pseudo property is match tables.
         return 1 if $self == $perl;
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # Don't generate tables of code points that match the property values
         # of a string property.  Such a list would most likely have many
@@ -6926,8 +6956,8 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
             return;
         }
 
-        return $map{main::objaddr $self}->
-                map_add_or_replace_non_nulls($map{main::objaddr $other});
+        no overloading;
+        return $map{0+$self}->map_add_or_replace_non_nulls($map{0+$other});
     }
 
     sub set_type {
@@ -6946,7 +6976,7 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
             return;
         }
 
-        $type{main::objaddr $self} = $type;
+        { no overloading; $type{0+$self} = $type; }
         return if $type != $BINARY;
 
         my $yes = $self->table('Y');
@@ -6976,7 +7006,7 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
         my $map = shift;    # What the range maps to.
         # Rest of parameters passed on.
 
-        my $addr = main::objaddr $self;
+        my $addr; { no overloading; $addr = 0+$self; }
 
         # If haven't the type of the property, gather information to figure it
         # out.
@@ -7028,7 +7058,7 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
         my $self = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-        my $addr = main::objaddr($self);
+        my $addr; { no overloading; $addr = 0+$self; }
 
         my $type = $type{$addr};
 
@@ -7137,7 +7167,8 @@ sub trace { return main::trace(@_) if main::DEBUG && $to_trace }
         *$sub = sub {
             use strict "refs";
             my $self = shift;
-            return $map{main::objaddr $self}->$sub(@_);
+            no overloading;
+            return $map{0+$self}->$sub(@_);
         }
     }
 
@@ -7545,10 +7576,11 @@ sub standardize ($) {
         else {
 
             # Keep track of cycles in the input, and refuse to infinitely loop
-            if (defined $already_output{main::objaddr $item}) {
+            my $addr; { no overloading; $addr = 0+$item; }
+            if (defined $already_output{$addr}) {
                 return "${indent}ALREADY OUTPUT: $item\n";
             }
-            $already_output{main::objaddr $item} = $item;
+            $already_output{$addr} = $item;
 
             if (ref $item eq 'ARRAY') {
                 my $using_brackets;
@@ -7665,7 +7697,7 @@ sub dump_inside_out {
     my $fields_ref = shift;
     Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
-    my $addr = main::objaddr $object;
+    my $addr; { no overloading; $addr = 0+$object; }
 
     my %hash;
     foreach my $key (keys %$fields_ref) {
@@ -7693,7 +7725,7 @@ sub _operator_dot {
         }
         else {
             my $ref = ref $$which;
-            my $addr = main::objaddr $$which;
+            my $addr; { no overloading; $addr = 0+$$which; }
             $$which = "$ref ($addr)";
         }
     }
@@ -7711,7 +7743,8 @@ sub _operator_equal {
 
     return 0 unless defined $other;
     return 0 unless ref $other;
-    return main::objaddr $self == main::objaddr $other;
+    no overloading;
+    return 0+$self == 0+$other;
 }
 
 sub _operator_not_equal {
@@ -8672,7 +8705,7 @@ END
                     $file->carp_bad_line("Unexpected property '$property_name'.  Skipped");
                     next LINE;
                 }
-                $property_addr = main::objaddr($property_object);
+                { no overloading; $property_addr = 0+($property_object); }
 
                 # Defer changing names until have a line that is acceptable
                 # (the 'next' statement above means is unacceptable)
@@ -8724,7 +8757,7 @@ END
                                             if $file->has_missings_defaults;
                     foreach my $default_ref (@missings_list) {
                         my $default = $default_ref->[0];
-                        my $addr = objaddr property_ref($default_ref->[1]);
+                        my $addr; { no overloading; $addr = 0+property_ref($default_ref->[1]); }
 
                         # For string properties, the default is just what the
                         # file says, but non-string properties should already
@@ -8963,7 +8996,7 @@ END
     # 0041;LATIN CAPITAL LETTER A;Lu;0;L;;;;;N;;;;0061;
     # The fields in order are:
     my $i = 0;            # The code point is in field 0, and is shifted off.
-    my $NAME = $i++;      # character name (e.g. "LATIN CAPITAL LETTER A")
+    my $CHARNAME = $i++;  # character name (e.g. "LATIN CAPITAL LETTER A")
     my $CATEGORY = $i++;  # category (e.g. "Lu")
     my $CCC = $i++;       # Canonical combining class (e.g. "230")
     my $BIDI = $i++;      # directional class (e.g. "L")
@@ -8982,7 +9015,14 @@ END
 
     # This routine in addition outputs these extra fields:
     my $DECOMP_TYPE = $i++; # Decomposition type
-    my $DECOMP_MAP = $i++;  # Must be last; another decomposition mapping
+
+    # These fields are modifications of ones above, and are usually
+    # suppressed; they must come last, as for speed, the loop upper bound is
+    # normally set to ignore them
+    my $NAME = $i++;        # This is the strict name field, not the one that
+                            # charnames uses.
+    my $DECOMP_MAP = $i++;  # Strict decomposition mapping; not the one used
+                            # by Unicode::Normalize
     my $last_field = $i - 1;
 
     # All these are read into an array for each line, with the indices defined
@@ -8995,31 +9035,44 @@ END
     $field_names[$BIDI] = 'Bidi_Class';
     $field_names[$CATEGORY] = 'General_Category';
     $field_names[$CCC] = 'Canonical_Combining_Class';
+    $field_names[$CHARNAME] = 'Perl_Charnames';
     $field_names[$COMMENT] = 'ISO_Comment';
     $field_names[$DECOMP_MAP] = 'Decomposition_Mapping';
     $field_names[$DECOMP_TYPE] = 'Decomposition_Type';
-    $field_names[$LOWER] = 'Simple_Lowercase_Mapping';
+    $field_names[$LOWER] = 'Lowercase_Mapping';
     $field_names[$MIRRORED] = 'Bidi_Mirrored';
     $field_names[$NAME] = 'Name';
     $field_names[$NUMERIC] = 'Numeric_Value';
     $field_names[$NUMERIC_TYPE_OTHER_DIGIT] = 'Numeric_Type';
     $field_names[$PERL_DECIMAL_DIGIT] = 'Perl_Decimal_Digit';
     $field_names[$PERL_DECOMPOSITION] = 'Perl_Decomposition_Mapping';
-    $field_names[$TITLE] = 'Simple_Titlecase_Mapping';
+    $field_names[$TITLE] = 'Titlecase_Mapping';
     $field_names[$UNICODE_1_NAME] = 'Unicode_1_Name';
-    $field_names[$UPPER] = 'Simple_Uppercase_Mapping';
+    $field_names[$UPPER] = 'Uppercase_Mapping';
 
-    # Some of these need a little more explanation.  The $PERL_DECIMAL_DIGIT
-    # field does not lead to an official Unicode property, but is used in
-    # calculating the Numeric_Type.  Perl however, creates a file from this
-    # field, so a Perl property is created from it.  Similarly, the Other
-    # Digit field is used only for calculating the Numeric_Type, and so it can
-    # be safely re-used as the place to store the value for Numeric_Type;
-    # hence it is referred to as $NUMERIC_TYPE_OTHER_DIGIT.  The input field
-    # named $PERL_DECOMPOSITION is a combination of both the decomposition
-    # mapping and its type.  Perl creates a file containing exactly this
-    # field, so it is used for that.  The two properties are separated into
-    # two extra output fields, $DECOMP_MAP and $DECOMP_TYPE.
+    # Some of these need a little more explanation:
+    # The $PERL_DECIMAL_DIGIT field does not lead to an official Unicode
+    #   property, but is used in calculating the Numeric_Type.  Perl however,
+    #   creates a file from this field, so a Perl property is created from it.
+    # Similarly, the Other_Digit field is used only for calculating the
+    #   Numeric_Type, and so it can be safely re-used as the place to store
+    #   the value for Numeric_Type; hence it is referred to as
+    #   $NUMERIC_TYPE_OTHER_DIGIT.
+    # The input field named $PERL_DECOMPOSITION is a combination of both the
+    #   decomposition mapping and its type.  Perl creates a file containing
+    #   exactly this field, so it is used for that.  The two properties are
+    #   separated into two extra output fields, $DECOMP_MAP and $DECOMP_TYPE.
+    #   $DECOMP_MAP is usually suppressed (unless the lists are changed to
+    #   output it), as Perl doesn't use it directly.
+    # The input field named here $CHARNAME is used to construct the
+    #   Perl_Charnames property, which is a combination of the Name property
+    #   (which the input field contains), and the Unicode_1_Name property, and
+    #   others from other files.  Since, the strict Name property is not used
+    #   by Perl, this field is used for the table that Perl does use.  The
+    #   strict Name property table is usually suppressed (unless the lists are
+    #   changed to output it), so it is accumulated in a separate field,
+    #   $NAME, which to save time is discarded unless the table is actually to
+    #   be output
 
     # This file is processed like most in this program.  Control is passed to
     # process_generic_property_file() which calls filter_UnicodeData_line()
@@ -9065,6 +9118,22 @@ END
     sub setup_UnicodeData { # Called before any lines of the input are read
         my $file = shift;
         Carp::carp_extra_args(\@_) if main::DEBUG && @_;
+
+        # Create a new property specially located that is a combination of the
+        # various Name properties: Name, Unicode_1_Name, Named Sequences, and
+        # Name_Alias properties.  (The final duplicates elements of the
+        # first.)  A comment for it will later be constructed based on the
+        # actual properties present and used
+        Property->new('Perl_Charnames',
+                       Core_Access => '\N{...} and "use charnames"',
+                       Default_Map => "",
+                       Directory => File::Spec->curdir(),
+                       File => 'Name',
+                       Internal_Only_Warning => 1,
+                       Perl_Extension => 1,
+                       Range_Size_1 => 1,
+                       Type => $STRING,
+                       );
 
         my $Perl_decomp = Property->new('Perl_Decomposition_Mapping',
                                         Directory => File::Spec->curdir(),
@@ -9117,12 +9186,18 @@ numerals.
 END
         ));
 
-        # This property is not used for generating anything else, and is
-        # usually not output.  By making it last in the list, we can just
+        # These properties are not used for generating anything else, and are
+        # usually not output.  By making them last in the list, we can just
         # change the high end of the loop downwards to avoid the work of
-        # generating a table that is just going to get thrown away.
-        if (! property_ref('Decomposition_Mapping')->to_output_map) {
-            $last_field--;
+        # generating a table(s) that is/are just going to get thrown away.
+        if (! property_ref('Decomposition_Mapping')->to_output_map
+            && ! property_ref('Name')->to_output_map)
+        {
+            $last_field = min($NAME, $DECOMP_MAP) - 1;
+        } elsif (property_ref('Decomposition_Mapping')->to_output_map) {
+            $last_field = $DECOMP_MAP;
+        } elsif (property_ref('Name')->to_output_map) {
+            $last_field = $NAME;
         }
         return;
     }
@@ -9256,45 +9331,47 @@ END
         #   D7A3;<Hangul Syllable, Last>;Lo;0;L;;;;;N;;;;;
         # that define ranges.  These should be processed after the fields are
         # adjusted above, as they may override some of them; but mostly what
-        # is left is to possibly adjust the $NAME field.  The names of all the
+        # is left is to possibly adjust the $CHARNAME field.  The names of all the
         # paired lines start with a '<', but this is also true of '<control>,
         # which isn't one of these special ones.
-        if ($fields[$NAME] eq '<control>') {
+        if ($fields[$CHARNAME] eq '<control>') {
 
             # Some code points in this file have the pseudo-name
             # '<control>', but the official name for such ones is the null
-            # string.
+            # string.  For charnames.pm, we use the Unicode version 1 name
             $fields[$NAME] = "";
+            $fields[$CHARNAME] = $fields[$UNICODE_1_NAME];
 
             # We had better not be in between range lines.
             if ($in_range) {
-                $file->carp_bad_line("Expecting a closing range line, not a $fields[$NAME]'.  Trying anyway");
+                $file->carp_bad_line("Expecting a closing range line, not a $fields[$CHARNAME]'.  Trying anyway");
                 $in_range = 0;
             }
         }
-        elsif (substr($fields[$NAME], 0, 1) ne '<') {
+        elsif (substr($fields[$CHARNAME], 0, 1) ne '<') {
 
             # Here is a non-range line.  We had better not be in between range
             # lines.
             if ($in_range) {
-                $file->carp_bad_line("Expecting a closing range line, not a $fields[$NAME]'.  Trying anyway");
+                $file->carp_bad_line("Expecting a closing range line, not a $fields[$CHARNAME]'.  Trying anyway");
                 $in_range = 0;
             }
             # XXX until charnames catches up.
-#            if ($fields[$NAME] =~ s/- $cp $//x) {
+#            if ($fields[$CHARNAME] =~ s/- $cp $//x) {
 #
 #                # These are code points whose names end in their code points,
 #                # which means the names are algorithmically derivable from the
 #                # code points.  To shorten the output Name file, the algorithm
 #                # for deriving these is placed in the file instead of each
 #                # code point, so they have map type $CP_IN_NAME
-#                $fields[$NAME] = $CMD_DELIM
+#                $fields[$CHARNAME] = $CMD_DELIM
 #                                 . $MAP_TYPE_CMD
 #                                 . '='
 #                                 . $CP_IN_NAME
 #                                 . $CMD_DELIM
-#                                 . $fields[$NAME];
+#                                 . $fields[$CHARNAME];
 #            }
+            $fields[$NAME] = $fields[$CHARNAME];
 
             # Some official names are really two alternate names with one in
             # parentheses.  What we do here is use the full official one for
@@ -9302,16 +9379,16 @@ END
             # table, we add two more entries, one for each of the alternate
             # ones.
             # elsif name ne ""
-            #check_and_handle_compound_name($cp, $fields[$NAME]);
+            #check_and_handle_compound_name($cp, $fields[$CHARNAME]);
             #check_and_handle_compound_name($cp, $unicode_1_name);
             # XXX until charnames catches up.
         }
-        elsif ($fields[$NAME] =~ /^<(.+), First>$/) {
-            $fields[$NAME] = $1;
+        elsif ($fields[$CHARNAME] =~ /^<(.+), First>$/) {
+            $fields[$CHARNAME] = $fields[$NAME] = $1;
 
             # Here we are at the beginning of a range pair.
             if ($in_range) {
-                $file->carp_bad_line("Expecting a closing range line, not a beginning one, $fields[$NAME]'.  Trying anyway");
+                $file->carp_bad_line("Expecting a closing range line, not a beginning one, $fields[$CHARNAME]'.  Trying anyway");
             }
             $in_range = 1;
 
@@ -9321,19 +9398,21 @@ END
             $force_output = 1;
 
         }
-        elsif ($fields[$NAME] !~ s/^<(.+), Last>$/$1/) {
-            $file->carp_bad_line("Unexpected name starting with '<' $fields[$NAME].  Ignoring this line.");
+        elsif ($fields[$CHARNAME] !~ s/^<(.+), Last>$/$1/) {
+            $file->carp_bad_line("Unexpected name starting with '<' $fields[$CHARNAME].  Ignoring this line.");
             $_ = "";
             return;
         }
         else { # Here, we are at the last line of a range pair.
 
             if (! $in_range) {
-                $file->carp_bad_line("Unexpected end of range $fields[$NAME] when not in one.  Ignoring this line.");
+                $file->carp_bad_line("Unexpected end of range $fields[$CHARNAME] when not in one.  Ignoring this line.");
                 $_ = "";
                 return;
             }
             $in_range = 0;
+
+            $fields[$NAME] = $fields[$CHARNAME];
 
             # Check that the input is valid: that the closing of the range is
             # the same as the beginning.
@@ -9343,8 +9422,8 @@ END
             }
 
             # The processing differs depending on the type of range,
-            # determined by its $NAME
-            if ($fields[$NAME] =~ /^Hangul Syllable/) {
+            # determined by its $CHARNAME
+            if ($fields[$CHARNAME] =~ /^Hangul Syllable/) {
 
                 # Check that the data looks right.
                 if ($decimal_previous_cp != $SBase) {
@@ -9368,20 +9447,22 @@ END
 
                 # This range is stored in our internal structure with its
                 # own map type, different from all others.
-                $previous_fields[$NAME] = $CMD_DELIM
+                $previous_fields[$CHARNAME] = $previous_fields[$NAME]
+                                        = $CMD_DELIM
                                           . $MAP_TYPE_CMD
                                           . '='
                                           . $HANGUL_SYLLABLE
                                           . $CMD_DELIM
-                                          . $fields[$NAME];
+                                          . $fields[$CHARNAME];
             }
-            elsif ($fields[$NAME] =~ /^CJK/) {
+            elsif ($fields[$CHARNAME] =~ /^CJK/) {
 
                 # The name for these contains the code point itself, and all
                 # are defined to have the same base name, regardless of what
                 # is in the file.  They are stored in our internal structure
                 # with a map type of $CP_IN_NAME
-                $previous_fields[$NAME] = $CMD_DELIM
+                $previous_fields[$CHARNAME] = $previous_fields[$NAME]
+                                        = $CMD_DELIM
                                            . $MAP_TYPE_CMD
                                            . '='
                                            . $CP_IN_NAME
@@ -9396,10 +9477,10 @@ END
                 # null, as there are no names for the private use and
                 # surrogate code points.
 
-                $previous_fields[$NAME] = "";
+                $previous_fields[$CHARNAME] = $previous_fields[$NAME] = "";
             }
             else {
-                $file->carp_bad_line("Unexpected code point range $fields[$NAME] because category is $fields[$CATEGORY].  Attempting to process it.");
+                $file->carp_bad_line("Unexpected code point range $fields[$CHARNAME] because category is $fields[$CATEGORY].  Attempting to process it.");
             }
 
             # The first line of the range caused everything else to be output,
@@ -9503,6 +9584,7 @@ END
             # essentially be this code.)  This uses the algorithm published by
             # Unicode.
             if (property_ref('Decomposition_Mapping')->to_output_map) {
+        local $to_trace = 1 if main::DEBUG;
                 for (my $S = $SBase; $S < $SBase + $SCount; $S++) {
                     use integer;
                     my $SIndex = $S - $SBase;
@@ -9757,26 +9839,35 @@ sub filter_arabic_shaping_line {
 
 sub setup_special_casing {
     # SpecialCasing.txt contains the non-simple case change mappings.  The
-    # simple ones are in UnicodeData.txt, and should already have been read
-    # in.
-    # This routine initializes the full mappings to the simple, then as each
-    # line is processed, it overrides the simple ones.
+    # simple ones are in UnicodeData.txt, which should already have been read
+    # in to the full property data structures, so as to initialize these with
+    # the simple ones.  Then the SpecialCasing.txt entries overwrite the ones
+    # which have different full mappings.
+
+    # This routine sees if the simple mappings are to be output, and if so,
+    # copies what has already been put into the full mapping tables, while
+    # they still contain only the simple mappings.
+
+    # The reason it is done this way is that the simple mappings are probably
+    # not going to be output, so it saves work to initialize the full tables
+    # with the simple mappings, and then overwrite those relatively few
+    # entries in them that have different full mappings, and thus skip the
+    # simple mapping tables altogether.
 
     my $file= shift;
     Carp::carp_extra_args(\@_) if main::DEBUG && @_;
 
     # For each of the case change mappings...
     foreach my $case ('lc', 'tc', 'uc') {
+        my $full = property_ref($case);
+        unless (defined $full && ! $full->is_empty) {
+            Carp::my_carp_bug("Need to process UnicodeData before SpecialCasing.  Only special casing will be generated.");
+        }
 
         # The simple version's name in each mapping merely has an 's' in front
         # of the full one's
         my $simple = property_ref('s' . $case);
-        unless (defined $simple && ! $simple->is_empty) {
-            Carp::my_carp_bug("Need to process UnicodeData before SpecialCasing.  Only special casing will be generated.");
-        }
-
-        # Initialize the full case mappings with the simple ones.
-        property_ref($case)->initialize($simple);
+        $simple->initialize($case) if $simple->to_output_map();
     }
 
     return;
@@ -10821,7 +10912,7 @@ sub compile_perl() {
     my $Pc = $gc->table('Connector_Punctuation'); # 'Pc' Not in release 1
     $Word += $Pc if defined $Pc;
 
-    # There is no [[:Word:]], so the name doesn't begin with Posix.
+    # This is a Perl extension, so the name doesn't begin with Posix.
     $perl->add_match_table('PerlWord',
                     Description => '\w, restricted to ASCII = [A-Za-z0-9_]',
                     Initialize => $Word & $ASCII,
@@ -10860,7 +10951,7 @@ sub compile_perl() {
                 Initialize => $Blank + $VertSpace,
     );
     $perl->add_match_table("PosixSpace",
-                            Description => "\\t \\n, \\x0B, \\f, \\r, and ' '",
+                            Description => "\\t, \\n, \\cK, \\f, \\r, and ' '.  (\\cK is vertical tab)",
                             Initialize => $Space & $ASCII,
                             );
 
@@ -10878,7 +10969,7 @@ sub compile_perl() {
                                         Description => 'Control characters');
     $Cntrl->set_equivalent_to($gc->table('Cc'), Related => 1);
     $perl->add_match_table("PosixCntrl",
-                            Description => '[\x00-\x1F]',
+                            Description => "ASCII control characters: NUL, SOH, STX, ETX, EOT, ENQ, ACK, BEL, BS, HT, LF, VT, FF, CR, SO, SI, DLE, DC1, DC2, DC3, DC4, NAK, SYN, ETB, CAN, EOM, SUB, ESC, FS, GS, RS, US, and DEL",
                             Initialize => $Cntrl & $ASCII,
                             );
 
@@ -10894,7 +10985,8 @@ sub compile_perl() {
                         Initialize => ~ ($Space + $controls),
                         );
     $perl->add_match_table("PosixGraph",
-                            Description => '[\x21-\x7E]',
+                            Description =>
+                                '[-!"#$%&\'()*+,./:;<>?@[\\\]^_`{|}~0-9A-Za-z]',
                             Initialize => $Graph & $ASCII,
                             );
 
@@ -10903,7 +10995,8 @@ sub compile_perl() {
                         Initialize => $Blank + $Graph - $gc->table('Control'),
                         );
     $perl->add_match_table("PosixPrint",
-                            Description => '[\x20-\x7E]',
+                            Description =>
+                              '[- 0-9A-Za-z!"#$%&\'()*+,./:;<>?@[\\\]^_`{|}~]',
                             Initialize => $Print & $ASCII,
                             );
 
@@ -10912,7 +11005,7 @@ sub compile_perl() {
 
     # \p{punct} doesn't include the symbols, which posix does
     $perl->add_match_table('PosixPunct',
-        Description => 'Graphical characters that aren\'t Word characters = [\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]',
+        Description => '[-!"#$%&\'()*+,./:;<>?@[\\\]^_`{|}~]',
         Initialize => $ASCII & ($gc->table('Punctuation')
                                 + $gc->table('Symbol')),
         );
@@ -11044,24 +11137,8 @@ sub compile_perl() {
         $lv_lvt_v->add_comment('For use in \X; matches: HST=LV | HST=LVT | HST=V');
     }
 
-    # Create a new property specially located that is a combination of the
-    # various Name properties: Name, Unicode_1_Name, Named Sequences, and
-    # Name_Alias properties.  (The final duplicates elements of the first.)  A
-    # comment for it is constructed based on the actual properties present and
-    # used
-    my $perl_charname = Property->new('Perl_Charnames',
-                                Core_Access => '\N{...} and charnames.pm',
-                                Default_Map => "",
-                                Directory => File::Spec->curdir(),
-                                File => 'Name',
-                                Internal_Only_Warning => 1,
-                                Perl_Extension => 1,
-                                Range_Size_1 => 1,
-                                Type => $STRING,
-                                Initialize => property_ref('Unicode_1_Name'),
-                                );
-    # Name overrides Unicode_1_Name
-    $perl_charname->property_add_or_replace_non_nulls(property_ref('Name'));
+    my $perl_charname = property_ref('Perl_Charnames');
+    # Was previously constructed to contain both Name and Unicode_1_Name
     my @composition = ('Name', 'Unicode_1_Name');
 
     if (@named_sequences) {
@@ -14022,6 +14099,11 @@ __DATA__
 use strict;
 use warnings;
 
+# If run outside the normal test suite on an ASCII platform, you can
+# just create a latin1_to_native() function that just returns its
+# inputs, because that's the only function used from test.pl
+require "test.pl";
+
 # Test qr/\X/ and the \p{} regular expression constructs.  This file is
 # constructed by mktables from the tables it generates, so if mktables is
 # buggy, this won't necessarily catch those bugs.  Tests are generated for all
@@ -14034,42 +14116,6 @@ use warnings;
 my $Tests = 0;
 my $Fails = 0;
 
-my $non_ASCII = (ord('A') != 65);
-
-# The 256 8-bit characters in ASCII ordinal order, with the ones that don't
-# have Perl names replaced by -1
-my @ascii_ordered_chars = (
-    "\0",
-    (-1) x 6,
-    "\a", "\b", "\t", "\n",
-    -1,   # No Vt
-    "\f", "\r",
-    (-1) x 18,
-    " ", "!", "\"", "#", '$', "%", "&", "'",
-    "(", ")", "*", "+", ",", "-", ".", "/",
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-    ":", ";", "<", "=", ">", "?", "@",
-    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
-    "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
-    "[", "\\", "]", "^", "_", "`",
-    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
-    "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
-    "{", "|", "}", "~",
-    (-1) x 129
-);
-
-sub ASCII_ord_to_native ($) {
-    # Converts input ordinal number to the native one, if can be done easily.
-    # Returns -1 otherwise.
-
-    my $ord = shift;
-
-    return $ord if $ord > 255 || ! $non_ASCII;
-    my $result = $ascii_ordered_chars[$ord];
-    return $result if $result eq '-1';
-    return ord($result);
-}
-
 sub Expect($$$$) {
     my $expected = shift;
     my $ord = shift;
@@ -14077,17 +14123,7 @@ sub Expect($$$$) {
     my $warning_type = shift;   # Type of warning message, like 'deprecated'
                                 # or empty if none
     my $line   = (caller)[2];
-
-    # Convert the non-ASCII code points expressible as characters to their
-    # ASCII equivalents, and skip the others.
-    $ord = ASCII_ord_to_native($ord);
-    if ($ord < 0) {
-        $Tests++;
-        print "ok $Tests - "
-              . sprintf("\"\\x{%04X}\"", $ord)
-              . " =~ $regex # Skipped: non-ASCII\n";
-        return;
-    }
+    $ord = ord(latin1_to_native(chr($ord)));
 
     # Convert the code point to hex form
     my $string = sprintf "\"\\x{%04X}\"", $ord;
@@ -14218,13 +14254,7 @@ sub Test_X($) {
         my $this_string = "";
         my $this_display = "";
         foreach my $code_point (@code_points) {
-            my $ord = ASCII_ord_to_native(hex $code_point);
-            if ($ord < 0) {
-                $Tests++;
-                print "ok $Tests - String containing $code_point =~ /(\\X)/g # Skipped: non-ASCII\n";
-                return;
-            }
-            $this_string .= chr $ord;
+            $this_string .= latin1_to_native(chr(hex $code_point));
             $this_display .= "\\x{$code_point}";
         }
 

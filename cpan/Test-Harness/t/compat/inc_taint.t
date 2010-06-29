@@ -1,6 +1,8 @@
 #!/usr/bin/perl -w
 
-use lib 't/lib';
+BEGIN {
+  use lib 't/lib';
+}
 
 use strict;
 
@@ -25,7 +27,9 @@ sub _all_ok {
     tie *NULL, 'Dev::Null' or die $!;
     select NULL;
     my ( $tot, $failed ) = Test::Harness::execute_tests(
-        tests => ['t/sample-tests/inc_taint']
+        tests => [
+            't/sample-tests/inc_taint'
+        ]
     );
     select STDOUT;
 

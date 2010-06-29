@@ -92,7 +92,7 @@
 
 %type <opval> decl format subrout mysubrout package use peg
 
-%type <opval> block mblock lineseq line loop cond else
+%type <opval> block package_block mblock lineseq line loop cond else
 %type <opval> expr term subscripted scalar ary hsh arylen star amper sideff
 %type <opval> argexpr nexpr texpr iexpr mexpr mnexpr miexpr
 %type <opval> listexpr listexprcom indirob listop method
@@ -242,6 +242,11 @@ line	:	label cond
 			      }
 			  })
 			}
+	|	package_block
+			{ $$ = newSTATEOP(0, NULL,
+				 newWHILEOP(0, 1, (LOOP*)(OP*)NULL,
+					    NOLINE, (OP*)NULL, $1,
+					    (OP*)NULL, 0)); }
 	|	label PLUGSTMT
 			{ $$ = newSTATEOP(0, PVAL($1), $2); }
 	;
@@ -656,6 +661,31 @@ package :	PACKAGE WORD WORD ';'
 			      package_version($2);
 			  $$ = (OP*)NULL;
 #endif
+			}
+	;
+
+package_block:	PACKAGE WORD WORD '{' remember
+			{
+			  int save_3_latefree = $3->op_latefree;
+			  $3->op_latefree = 1;
+			  package($3);
+			  $3->op_latefree = save_3_latefree;
+			  if ($2) {
+			      int save_2_latefree = $2->op_latefree;
+			      $2->op_latefree = 1;
+			      package_version($2);
+			      $2->op_latefree = save_2_latefree;
+			  }
+			}
+		    lineseq '}'
+			{ if (PL_parser->copline > (line_t)IVAL($4))
+			      PL_parser->copline = (line_t)IVAL($4);
+			  $$ = block_end($5, $7);
+			  TOKEN_GETMAD($4,$$,'{');
+			  TOKEN_GETMAD($8,$$,'}');
+			  op_free($3);
+			  if ($2)
+			      op_free($2);
 			}
 	;
 

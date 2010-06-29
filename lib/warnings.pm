@@ -6,7 +6,7 @@
 
 package warnings;
 
-our $VERSION = '1.09';
+our $VERSION = '1.10';
 
 # Verify that we're called correctly so that warnings will work.
 # see also strict.pm.
@@ -332,13 +332,8 @@ sub Croaker
     Carp::croak(@_);
 }
 
-sub bits
-{
-    # called from B::Deparse.pm
-
-    push @_, 'all' unless @_;
-
-    my $mask;
+sub _bits {
+    my $mask = shift ;
     my $catmask ;
     my $fatal = 0 ;
     my $no_fatal = 0 ;
@@ -364,13 +359,16 @@ sub bits
     return $mask ;
 }
 
+sub bits
+{
+    # called from B::Deparse.pm
+    push @_, 'all' unless @_ ;
+    return _bits(undef, @_) ;
+}
+
 sub import 
 {
     shift;
-
-    my $catmask ;
-    my $fatal = 0 ;
-    my $no_fatal = 0 ;
 
     my $mask = ${^WARNING_BITS} ;
 
@@ -379,27 +377,8 @@ sub import
         $mask |= $DeadBits{'all'} if vec($mask, $Offsets{'all'}+1, 1);
     }
     
-    push @_, 'all' unless @_;
-
-    foreach my $word ( @_ ) {
-	if ($word eq 'FATAL') {
-	    $fatal = 1;
-	    $no_fatal = 0;
-	}
-	elsif ($word eq 'NONFATAL') {
-	    $fatal = 0;
-	    $no_fatal = 1;
-	}
-	elsif ($catmask = $Bits{$word}) {
-	    $mask |= $catmask ;
-	    $mask |= $DeadBits{$word} if $fatal ;
-	    $mask &= ~($DeadBits{$word}|$All) if $no_fatal ;
-	}
-	else
-          { Croaker("Unknown warnings category '$word'")}
-    }
-
-    ${^WARNING_BITS} = $mask ;
+    # Empty @_ is equivalent to @_ = 'all' ;
+    ${^WARNING_BITS} = @_ ? _bits($mask, @_) : $mask | $Bits{all} ;
 }
 
 sub unimport 
@@ -432,11 +411,25 @@ sub unimport
 
 my %builtin_type; @builtin_type{qw(SCALAR ARRAY HASH CODE REF GLOB LVALUE Regexp)} = ();
 
+sub MESSAGE () { 4 };
+sub FATAL () { 2 };
+sub NORMAL () { 1 };
+
 sub __chk
 {
     my $category ;
     my $offset ;
     my $isobj = 0 ;
+    my $wanted = shift;
+    my $has_message = $wanted & MESSAGE;
+
+    unless (@_ == 1 || @_ == ($has_message ? 2 : 0)) {
+	my $sub = (caller 1)[3];
+	my $syntax = $has_message ? "[category,] 'message'" : '[category]';
+	Croaker("Usage: $sub($syntax)");
+    }
+
+    my $message = pop if $has_message;
 
     if (@_) {
         # check the category supplied.
@@ -458,11 +451,11 @@ sub __chk
 	    unless defined $offset ;
     }
 
-    my $this_pkg = (caller(1))[0] ;
-    my $i = 2 ;
-    my $pkg ;
+    my $i;
 
     if ($isobj) {
+        my $pkg;
+        $i = 2;
         while (do { { package DB; $pkg = (caller($i++))[0] } } ) {
             last unless @DB::args && $DB::args[0] =~ /^$category=/ ;
         }
@@ -472,8 +465,29 @@ sub __chk
         $i = _error_loc(); # see where Carp will allocate the error
     }
 
-    my $callers_bitmask = (caller($i))[9] ;
-    return ($callers_bitmask, $offset, $i) ;
+    # Defaulting this to 0 reduces complexity in code paths below.
+    my $callers_bitmask = (caller($i))[9] || 0 ;
+
+    my @results;
+    foreach my $type (FATAL, NORMAL) {
+	next unless $wanted & $type;
+
+	push @results, (vec($callers_bitmask, $offset + $type - 1, 1) ||
+			vec($callers_bitmask, $Offsets{'all'} + $type - 1, 1));
+    }
+
+    # &enabled and &fatal_enabled
+    return $results[0] unless $has_message;
+
+    # &warnif, and the category is neither enabled as warning nor as fatal
+    return if $wanted == (NORMAL | FATAL | MESSAGE)
+	&& !($results[0] || $results[1]);
+
+    require Carp;
+    Carp::croak($message) if $results[0];
+    # will always get here for &warn. will only get here for &warnif if the
+    # category is enabled
+    Carp::carp($message);
 }
 
 sub _error_loc {
@@ -483,62 +497,27 @@ sub _error_loc {
 
 sub enabled
 {
-    Croaker("Usage: warnings::enabled([category])")
-	unless @_ == 1 || @_ == 0 ;
-
-    my ($callers_bitmask, $offset, $i) = __chk(@_) ;
-
-    return 0 unless defined $callers_bitmask ;
-    return vec($callers_bitmask, $offset, 1) ||
-           vec($callers_bitmask, $Offsets{'all'}, 1) ;
+    return __chk(NORMAL, @_);
 }
 
 sub fatal_enabled
 {
-    Croaker("Usage: warnings::fatal_enabled([category])")
-  unless @_ == 1 || @_ == 0 ;
-
-    my ($callers_bitmask, $offset, $i) = __chk(@_) ;
-
-    return 0 unless defined $callers_bitmask;
-    return vec($callers_bitmask, $offset + 1, 1) ||
-           vec($callers_bitmask, $Offsets{'all'} + 1, 1) ;
+    return __chk(FATAL, @_);
 }
 
 sub warn
 {
-    Croaker("Usage: warnings::warn([category,] 'message')")
-	unless @_ == 2 || @_ == 1 ;
-
-    my $message = pop ;
-    my ($callers_bitmask, $offset, $i) = __chk(@_) ;
-    require Carp;
-    Carp::croak($message)
-	if vec($callers_bitmask, $offset+1, 1) ||
-	   vec($callers_bitmask, $Offsets{'all'}+1, 1) ;
-    Carp::carp($message) ;
+    return __chk(FATAL | MESSAGE, @_);
 }
 
 sub warnif
 {
-    Croaker("Usage: warnings::warnif([category,] 'message')")
-	unless @_ == 2 || @_ == 1 ;
-
-    my $message = pop ;
-    my ($callers_bitmask, $offset, $i) = __chk(@_) ;
-
-    return
-        unless defined $callers_bitmask &&
-            	(vec($callers_bitmask, $offset, 1) ||
-            	vec($callers_bitmask, $Offsets{'all'}, 1)) ;
-
-    require Carp;
-    Carp::croak($message)
-	if vec($callers_bitmask, $offset+1, 1) ||
-	   vec($callers_bitmask, $Offsets{'all'}+1, 1) ;
-
-    Carp::carp($message) ;
+    return __chk(NORMAL | FATAL | MESSAGE, @_);
 }
+
+# These are not part of any public interface, so we can delete them to save
+# space.
+delete $warnings::{$_} foreach qw(NORMAL FATAL MESSAGE);
 
 1;
 # ex: set ro:

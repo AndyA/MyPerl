@@ -126,6 +126,7 @@ PERLVAR(Idefstash,	HV *)		/* main symbol table */
 PERLVAR(Icurstash,	HV *)		/* symbol table for current package */
 
 PERLVAR(Irestartop,	OP *)		/* propagating an error from croak? */
+PERLVAR(Irestartjmpenv,	JMPENV *)	/* target frame for longjmp in die */
 PERLVAR(Icurcop,	COP *)
 PERLVAR(Icurstack,	AV *)		/* THE STACK */
 PERLVAR(Icurstackinfo,	PERL_SI *)	/* current stack + context */
@@ -256,7 +257,7 @@ PERLVAR(Iexit_flags,	U8)		/* was exit() unexpected, etc. */
 PERLVAR(Isrand_called,	bool)
 /* Part of internal state, but makes the 16th 1 byte variable in a row.  */
 PERLVAR(Itainting,	bool)		/* doing taint checks */
-/* Space for a U8 */
+PERLVARI(Iin_load_module, bool, FALSE)	/* to prevent recursions in PerlIO_find_layer */
 PERLVAR(Iinplace,	char *)
 PERLVAR(Ie_script,	SV *)
 
@@ -278,22 +279,22 @@ PERLVARI(Isig_pending, int,0)           /* Number if highest signal pending */
 PERLVAR(Ipsig_pend, int *)		/* per-signal "count" of pending */
 
 /* shortcuts to various I/O objects */
-PERLVAR(Istdingv,	GV *)
-PERLVAR(Istderrgv,	GV *)
+PERLVAR(Istdingv,	GV *)		/*  *STDIN      */
+PERLVAR(Istderrgv,	GV *)		/*  *STDERR     */
 PERLVAR(Idefgv,		GV *)
-PERLVAR(Iargvgv,	GV *)
-PERLVAR(Iargvoutgv,	GV *)
+PERLVAR(Iargvgv,	GV *)		/*  *ARGV       */
+PERLVAR(Iargvoutgv,	GV *)		/*  *ARGVOUT    */
 PERLVAR(Iargvout_stack,	AV *)
 
 /* shortcuts to regexp stuff */
-PERLVAR(Ireplgv,	GV *)
+PERLVAR(Ireplgv,	GV *)		/*  *^R         */
 
 /* shortcuts to misc objects */
-PERLVAR(Ierrgv,		GV *)
+PERLVAR(Ierrgv,		GV *)		/*  *@          */
 
 /* shortcuts to debugging objects */
-PERLVAR(IDBgv,		GV *)
-PERLVAR(IDBline,	GV *)
+PERLVAR(IDBgv,		GV *)		/*  *DB::DB     */
+PERLVAR(IDBline,	GV *)		/*  *DB::line   */
 
 /*
 =for apidoc mn|GV *|PL_DBsub
@@ -317,10 +318,10 @@ variable.  See C<PL_DBsingle>.
 =cut
 */
 
-PERLVAR(IDBsub,		GV *)
-PERLVAR(IDBsingle,	SV *)
-PERLVAR(IDBtrace,	SV *)
-PERLVAR(IDBsignal,	SV *)
+PERLVAR(IDBsub,		GV *)		/*  *DB::sub    */
+PERLVAR(IDBsingle,	SV *)		/*  $DB::single */
+PERLVAR(IDBtrace,	SV *)		/*  $DB::trace  */
+PERLVAR(IDBsignal,	SV *)		/*  $DB::signal */
 PERLVAR(Idbargs,	AV *)		/* args to call listed by caller function */
 
 /* symbol tables */
@@ -631,7 +632,7 @@ PERLVARI(Iunitcheckav_save, AV*, NULL)	/* save UNITCHECK{}s when compiling */
 
 PERLVARI(Iclocktick, long, 0)	/* this many times() ticks in a second */
 
-PERLVARI(Iin_load_module, int, 0)	/* to prevent recursions in PerlIO_find_layer */
+/* Space for an int */
 
 PERLVAR(Iunicode, U32)	/* Unicode features: $ENV{PERL_UNICODE} or -C */
 
@@ -653,6 +654,8 @@ PERLVARI(Ilockhook,	share_proc_t,	MEMBER_TO_FPTR(Perl_sv_nosharing))
 PERLVARI(Iunlockhook,	share_proc_t,	MEMBER_TO_FPTR(PERL_UNLOCK_HOOK))
 
 PERLVARI(Ithreadhook,	thrhook_proc_t,	MEMBER_TO_FPTR(Perl_nothreadhook))
+
+PERLVARI(Isignalhook,	despatch_signals_proc_t, MEMBER_TO_FPTR(Perl_despatch_signals))
 
 PERLVARI(Ihash_seed, UV, 0)		/* Hash initializer */
 

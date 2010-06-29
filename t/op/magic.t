@@ -12,7 +12,7 @@ BEGIN {
 use warnings;
 use Config;
 
-plan (tests => 83);
+plan (tests => 85);
 
 $Is_MSWin32  = $^O eq 'MSWin32';
 $Is_NetWare  = $^O eq 'NetWare';
@@ -279,6 +279,19 @@ is $^O, $orig_osname, 'Assigning $^I does not clobber $^O';
 }
 $^O = $orig_osname;
 
+{
+    #RT #72422
+    foreach my $p (0, 1) {
+	fresh_perl_is(<<"EOP", '2 4 8', undef, "test \$^P = $p");
+\$DB::single = 2;
+\$DB::trace = 4;
+\$DB::signal = 8;
+\$^P = $p;
+print "\$DB::single \$DB::trace \$DB::signal";
+EOP
+    }
+}
+
 SKIP: {
     skip("%ENV manipulations fail or aren't safe on $^O", 4)
 	if $Is_VMS || $Is_Dos;
@@ -466,13 +479,13 @@ is "@+", "10 1 6 10";
 
 # Test for bug [perl #27839]
 {
-    local $TODO = "fixing a casting issue revealed broken behaviour in this test";
     my $x;
     sub f {
 	"abc" =~ /(.)./;
 	$x = "@+";
 	return @+;
     };
+    "pqrstuvwxyz" =~ /..(....)../; # prime @+ etc in this scope
     my @y = f();
     is $x, "@y", "return a magic array ($x) vs (@y)";
 
@@ -538,3 +551,4 @@ foreach my $sig (qw(__DIE__ _BOGUS_HOOK KILL THIRSTY)) {
     is int $!, 9999, q{[perl #72850] Core dump in bleadperl from perl -e '$! = 9999; $a = $!;'};
 
 }
+

@@ -807,17 +807,16 @@ PerlIO_find_layer(pTHX_ const char *name, STRLEN len, int load)
 	    SV * const layer = newSVpvn(name, len);
 	    CV * const cv    = get_cvs("PerlIO::Layer::NoWarnings", 0);
 	    ENTER;
-	    SAVEINT(PL_in_load_module);
+	    SAVEBOOL(PL_in_load_module);
 	    if (cv) {
 		SAVEGENERICSV(PL_warnhook);
 		PL_warnhook = MUTABLE_SV((SvREFCNT_inc_simple_NN(cv)));
 	    }
-	    PL_in_load_module++;
+	    PL_in_load_module = TRUE;
 	    /*
 	     * The two SVs are magically freed by load_module
 	     */
 	    Perl_load_module(aTHX_ 0, pkgsv, NULL, layer, NULL);
-	    PL_in_load_module--;
 	    LEAVE;
 	    return PerlIO_find_layer(aTHX_ name, len, 0);
 	}
@@ -4110,7 +4109,7 @@ PerlIOBuf_get_base(pTHX_ PerlIO *f)
     if (!b->buf) {
 	if (!b->bufsiz)
 	    b->bufsiz = 4096;
-	b->buf = Newxz(b->buf,b->bufsiz, STDCHAR);
+	Newxz(b->buf,b->bufsiz, STDCHAR);
 	if (!b->buf) {
 	    b->buf = (STDCHAR *) & b->oneword;
 	    b->bufsiz = sizeof(b->oneword);

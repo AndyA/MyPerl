@@ -403,101 +403,91 @@ PP(pp_rcatline)
 PP(pp_warn)
 {
     dVAR; dSP; dMARK;
-    SV *tmpsv;
-    const char *tmps;
+    SV *exsv;
+    const char *pv;
     STRLEN len;
     if (SP - MARK > 1) {
 	dTARGET;
 	do_join(TARG, &PL_sv_no, MARK, SP);
-	tmpsv = TARG;
+	exsv = TARG;
 	SP = MARK + 1;
     }
     else if (SP == MARK) {
-	tmpsv = &PL_sv_no;
+	exsv = &PL_sv_no;
 	EXTEND(SP, 1);
 	SP = MARK + 1;
     }
     else {
-	tmpsv = TOPs;
+	exsv = TOPs;
     }
-    tmps = SvPV_const(tmpsv, len);
-    if ((!tmps || !len) && PL_errgv) {
-  	SV * const error = ERRSV;
-	SvUPGRADE(error, SVt_PV);
-	if (SvPOK(error) && SvCUR(error))
-	    sv_catpvs(error, "\t...caught");
-	tmpsv = error;
-	tmps = SvPV_const(tmpsv, len);
-    }
-    if (!tmps || !len)
-	tmpsv = newSVpvs_flags("Warning: something's wrong", SVs_TEMP);
 
-    Perl_warn(aTHX_ "%"SVf, SVfARG(tmpsv));
+    if (SvROK(exsv) || (pv = SvPV_const(exsv, len), len)) {
+	/* well-formed exception supplied */
+    }
+    else if (SvROK(ERRSV)) {
+	exsv = ERRSV;
+    }
+    else if (SvPOK(ERRSV) && SvCUR(ERRSV)) {
+	exsv = sv_mortalcopy(ERRSV);
+	sv_catpvs(exsv, "\t...caught");
+    }
+    else {
+	exsv = newSVpvs_flags("Warning: something's wrong", SVs_TEMP);
+    }
+    warn_sv(exsv);
     RETSETYES;
 }
 
 PP(pp_die)
 {
     dVAR; dSP; dMARK;
-    const char *tmps;
-    SV *tmpsv;
+    SV *exsv;
+    const char *pv;
     STRLEN len;
-    bool multiarg = 0;
 #ifdef VMS
     VMSISH_HUSHED  = VMSISH_HUSHED || (PL_op->op_private & OPpHUSH_VMSISH);
 #endif
     if (SP - MARK != 1) {
 	dTARGET;
 	do_join(TARG, &PL_sv_no, MARK, SP);
-	tmpsv = TARG;
-	tmps = SvPV_const(tmpsv, len);
-	multiarg = 1;
+	exsv = TARG;
 	SP = MARK + 1;
     }
     else {
-	tmpsv = TOPs;
-        tmps = SvROK(tmpsv) ? (const char *)NULL : SvPV_const(tmpsv, len);
+	exsv = TOPs;
     }
-    if (!tmps || !len) {
-	SV * const error = ERRSV;
-	SvUPGRADE(error, SVt_PV);
-	if (multiarg ? SvROK(error) : SvROK(tmpsv)) {
-	    if (!multiarg)
-		SvSetSV(error,tmpsv);
-	    else if (sv_isobject(error)) {
-		HV * const stash = SvSTASH(SvRV(error));
-		GV * const gv = gv_fetchmethod(stash, "PROPAGATE");
-		if (gv) {
-		    SV * const file = sv_2mortal(newSVpv(CopFILE(PL_curcop),0));
-		    SV * const line = sv_2mortal(newSVuv(CopLINE(PL_curcop)));
-		    EXTEND(SP, 3);
-		    PUSHMARK(SP);
-		    PUSHs(error);
-		    PUSHs(file);
- 		    PUSHs(line);
-		    PUTBACK;
-		    call_sv(MUTABLE_SV(GvCV(gv)),
-			    G_SCALAR|G_EVAL|G_KEEPERR);
-		    sv_setsv(error,*PL_stack_sp--);
-		}
-	    }
-	    DIE(aTHX_ NULL);
-	}
-	else {
-	    if (SvPOK(error) && SvCUR(error))
-		sv_catpvs(error, "\t...propagated");
-	    tmpsv = error;
-	    if (SvOK(tmpsv))
-		tmps = SvPV_const(tmpsv, len);
-	    else
-		tmps = NULL;
-	}
-    }
-    if (!tmps || !len)
-	tmpsv = newSVpvs_flags("Died", SVs_TEMP);
 
-    DIE(aTHX_ "%"SVf, SVfARG(tmpsv));
-    RETURN;
+    if (SvROK(exsv) || (pv = SvPV_const(exsv, len), len)) {
+	/* well-formed exception supplied */
+    }
+    else if (SvROK(ERRSV)) {
+	exsv = ERRSV;
+	if (sv_isobject(exsv)) {
+	    HV * const stash = SvSTASH(SvRV(exsv));
+	    GV * const gv = gv_fetchmethod(stash, "PROPAGATE");
+	    if (gv) {
+		SV * const file = sv_2mortal(newSVpv(CopFILE(PL_curcop),0));
+		SV * const line = sv_2mortal(newSVuv(CopLINE(PL_curcop)));
+		EXTEND(SP, 3);
+		PUSHMARK(SP);
+		PUSHs(exsv);
+		PUSHs(file);
+		PUSHs(line);
+		PUTBACK;
+		call_sv(MUTABLE_SV(GvCV(gv)),
+			G_SCALAR|G_EVAL|G_KEEPERR);
+		exsv = sv_mortalcopy(*PL_stack_sp--);
+	    }
+	}
+    }
+    else if (SvPOK(ERRSV) && SvCUR(ERRSV)) {
+	exsv = sv_mortalcopy(ERRSV);
+	sv_catpvs(exsv, "\t...propagated");
+    }
+    else {
+	exsv = newSVpvs_flags("Died", SVs_TEMP);
+    }
+    return die_sv(exsv);
 }
 
 /* I/O. */
@@ -561,28 +551,71 @@ PP(pp_open)
     RETURN;
 }
 
+/* These are private to this function, which is private to this file.
+   Use 0x04 rather than the next available bit, to help the compiler if the
+   architecture can generate more efficient instructions.  */
+#define MORTALIZE_NOT_NEEDED	0x04
+#define TIED_HANDLE_ARGC_SHIFT	3
+
+static OP *
+S_tied_handle_method(pTHX_ const char *const methname, SV **sp,
+		     IO *const io, MAGIC *const mg, const U32 flags, ...)
+{
+    U32 argc = flags >> TIED_HANDLE_ARGC_SHIFT;
+
+    PERL_ARGS_ASSERT_TIED_HANDLE_METHOD;
+
+    /* Ensure that our flag bits do not overlap.  */
+    assert((MORTALIZE_NOT_NEEDED & G_WANT) == 0);
+    assert((G_WANT >> TIED_HANDLE_ARGC_SHIFT) == 0);
+
+    PUSHMARK(sp);
+    PUSHs(SvTIED_obj(MUTABLE_SV(io), mg));
+    if (argc) {
+	const U32 mortalize_not_needed = flags & MORTALIZE_NOT_NEEDED;
+	va_list args;
+	va_start(args, flags);
+	do {
+	    SV *const arg = va_arg(args, SV *);
+	    if(mortalize_not_needed)
+		PUSHs(arg);
+	    else
+		mPUSHs(arg);
+	} while (--argc);
+	va_end(args);
+    }
+
+    PUTBACK;
+    ENTER_with_name("call_tied_handle_method");
+    call_method(methname, flags & G_WANT);
+    LEAVE_with_name("call_tied_handle_method");
+    return NORMAL;
+}
+
+#define tied_handle_method(a,b,c,d)		\
+    S_tied_handle_method(aTHX_ a,b,c,d,G_SCALAR)
+#define tied_handle_method1(a,b,c,d,e)	\
+    S_tied_handle_method(aTHX_ a,b,c,d,G_SCALAR | (1 << TIED_HANDLE_ARGC_SHIFT),e)
+#define tied_handle_method2(a,b,c,d,e,f)	\
+    S_tied_handle_method(aTHX_ a,b,c,d,G_SCALAR | (2 << TIED_HANDLE_ARGC_SHIFT), e,f)
+
 PP(pp_close)
 {
     dVAR; dSP;
     GV * const gv = (MAXARG == 0) ? PL_defoutgv : MUTABLE_GV(POPs);
+
+    if (MAXARG == 0)
+	EXTEND(SP, 1);
 
     if (gv) {
 	IO * const io = GvIO(gv);
 	if (io) {
 	    MAGIC * const mg = SvTIED_mg((const SV *)io, PERL_MAGIC_tiedscalar);
 	    if (mg) {
-		PUSHMARK(SP);
-		XPUSHs(SvTIED_obj(MUTABLE_SV(io), mg));
-		PUTBACK;
-		ENTER_with_name("call_CLOSE");
-		call_method("CLOSE", G_SCALAR);
-		LEAVE_with_name("call_CLOSE");
-		SPAGAIN;
-		RETURN;
+		return tied_handle_method("CLOSE", SP, io, mg);
 	    }
 	}
     }
-    EXTEND(SP, 1);
     PUSHs(boolSV(do_close(gv, TRUE)));
     RETURN;
 }
@@ -643,7 +676,6 @@ badexit:
     RETPUSHUNDEF;
 #else
     DIE(aTHX_ PL_no_func, "pipe");
-    return NORMAL;
 #endif
 }
 
@@ -662,14 +694,7 @@ PP(pp_fileno)
     if (gv && (io = GvIO(gv))
 	&& (mg = SvTIED_mg((const SV *)io, PERL_MAGIC_tiedscalar)))
     {
-	PUSHMARK(SP);
-	XPUSHs(SvTIED_obj(MUTABLE_SV(io), mg));
-	PUTBACK;
-	ENTER_with_name("call_FILENO");
-	call_method("FILENO", G_SCALAR);
-	LEAVE_with_name("call_FILENO");
-	SPAGAIN;
-	RETURN;
+	return tied_handle_method("FILENO", SP, io, mg);
     }
 
     if (!gv || !(io = GvIO(gv)) || !(fp = IoIFP(io))) {
@@ -735,20 +760,18 @@ PP(pp_binmode)
     if (gv && (io = GvIO(gv))) {
 	MAGIC * const mg = SvTIED_mg((const SV *)io, PERL_MAGIC_tiedscalar);
 	if (mg) {
-	    PUSHMARK(SP);
-	    XPUSHs(SvTIED_obj(MUTABLE_SV(io), mg));
-	    if (discp)
-		XPUSHs(discp);
-	    PUTBACK;
-	    ENTER_with_name("call_BINMODE");
-	    call_method("BINMODE", G_SCALAR);
-	    LEAVE_with_name("call_BINMODE");
-	    SPAGAIN;
-	    RETURN;
+	    /* This takes advantage of the implementation of the varargs
+	       function, which I don't think that the optimiser will be able to
+	       figure out. Although, as it's a static function, in theory it
+	       could.  */
+	    return S_tied_handle_method(aTHX_ "BINMODE", SP, io, mg,
+					G_SCALAR|MORTALIZE_NOT_NEEDED
+					| (discp
+					   ? (1 << TIED_HANDLE_ARGC_SHIFT) : 0),
+					discp);
 	}
     }
 
-    EXTEND(SP, 1);
     if (!(io = GvIO(gv)) || !(fp = IoIFP(io))) {
 	if (ckWARN2(WARN_UNOPENED,WARN_CLOSED))
 	    report_evil_fh(gv, io, PL_op->op_type);
@@ -830,8 +853,10 @@ PP(pp_tie)
 	call_method(methname, G_SCALAR);
     }
     else {
-	/* Not clear why we don't call call_method here too.
-	 * perhaps to get different error message ?
+	/* Can't use call_method here, else this: fileno FOO; tie @a, "FOO"
+	 * will attempt to invoke IO::File::TIEARRAY, with (best case) the
+	 * wrong error message, and worse case, supreme action at a distance.
+	 * (Sorry obfuscation writers. You're not going to be given this one.)
 	 */
 	STRLEN len;
 	const char *name = SvPV_nomg_const(*MARK, len);
@@ -887,7 +912,7 @@ PP(pp_untie)
 	    CV *cv;
 	    if (gv && isGV(gv) && (cv = GvCV(gv))) {
 	       PUSHMARK(SP);
-	       XPUSHs(SvTIED_obj(MUTABLE_SV(gv), mg));
+	       PUSHs(SvTIED_obj(MUTABLE_SV(gv), mg));
 	       mXPUSHi(SvREFCNT(obj) - 1);
 	       PUTBACK;
 	       ENTER_with_name("call_UNTIE");
@@ -1018,7 +1043,7 @@ PP(pp_sselect)
 	    if (SvIsCOW(sv))
 		sv_force_normal_flags(sv, 0);
 	    if (SvREADONLY(sv) && !(SvPOK(sv) && SvCUR(sv) == 0))
-		DIE(aTHX_ "%s", PL_no_modify);
+		Perl_croak_no_modify(aTHX);
 	}
 	if (!SvPOK(sv)) {
 	    Perl_ck_warner(aTHX_ packWARN(WARN_MISC), "Non-string passed as bitmask");
@@ -1141,7 +1166,6 @@ PP(pp_sselect)
     RETURN;
 #else
     DIE(aTHX_ "select not implemented");
-    return NORMAL;
 #endif
 }
 
@@ -1203,20 +1227,19 @@ PP(pp_getc)
     IO *io = NULL;
     GV * const gv = (MAXARG==0) ? PL_stdingv : MUTABLE_GV(POPs);
 
+    if (MAXARG == 0)
+	EXTEND(SP, 1);
+
     if (gv && (io = GvIO(gv))) {
 	MAGIC * const mg = SvTIED_mg((const SV *)io, PERL_MAGIC_tiedscalar);
 	if (mg) {
-	    const I32 gimme = GIMME_V;
-	    PUSHMARK(SP);
-	    XPUSHs(SvTIED_obj(MUTABLE_SV(io), mg));
-	    PUTBACK;
-	    ENTER;
-	    call_method("GETC", gimme);
-	    LEAVE;
-	    SPAGAIN;
-	    if (gimme == G_SCALAR)
+	    const U32 gimme = GIMME_V;
+	    S_tied_handle_method(aTHX_ "GETC", SP, io, mg, gimme);
+	    if (gimme == G_SCALAR) {
+		SPAGAIN;
 		SvSetMagicSV_nosteal(TARG, TOPs);
-	    RETURN;
+	    }
+	    return NORMAL;
 	}
     }
     if (!gv || do_eof(gv)) { /* make sure we have fp with something */
@@ -1274,14 +1297,15 @@ PP(pp_enterwrite)
     CV *cv = NULL;
     SV *tmpsv = NULL;
 
-    if (MAXARG == 0)
+    if (MAXARG == 0) {
 	gv = PL_defoutgv;
+	EXTEND(SP, 1);
+    }
     else {
 	gv = MUTABLE_GV(POPs);
 	if (!gv)
 	    gv = PL_defoutgv;
     }
-    EXTEND(SP, 1);
     io = GvIO(gv);
     if (!io) {
 	RETPUSHNO;
@@ -2013,38 +2037,40 @@ PP(pp_eof)
     GV *gv;
     IO *io;
     MAGIC *mg;
+    /*
+     * in Perl 5.12 and later, the additional parameter is a bitmask:
+     * 0 = eof
+     * 1 = eof(FH)
+     * 2 = eof()  <- ARGV magic
+     *
+     * I'll rely on the compiler's trace flow analysis to decide whether to
+     * actually assign this out here, or punt it into the only block where it is
+     * used. Doing it out here is DRY on the condition logic.
+     */
+    unsigned int which;
 
-    if (MAXARG)
+    if (MAXARG) {
 	gv = PL_last_in_gv = MUTABLE_GV(POPs);	/* eof(FH) */
-    else if (PL_op->op_flags & OPf_SPECIAL)
-	gv = PL_last_in_gv = GvEGVx(PL_argvgv);	/* eof() - ARGV magic */
-    else
-	gv = PL_last_in_gv;			/* eof */
+	which = 1;
+    }
+    else {
+	EXTEND(SP, 1);
+
+	if (PL_op->op_flags & OPf_SPECIAL) {
+	    gv = PL_last_in_gv = GvEGVx(PL_argvgv);	/* eof() - ARGV magic */
+	    which = 2;
+	}
+	else {
+	    gv = PL_last_in_gv;			/* eof */
+	    which = 0;
+	}
+    }
 
     if (!gv)
 	RETPUSHNO;
 
     if ((io = GvIO(gv)) && (mg = SvTIED_mg((const SV *)io, PERL_MAGIC_tiedscalar))) {
-	PUSHMARK(SP);
-	XPUSHs(SvTIED_obj(MUTABLE_SV(io), mg));
-	/*
-	 * in Perl 5.12 and later, the additional paramter is a bitmask:
-	 * 0 = eof
-	 * 1 = eof(FH)
-	 * 2 = eof()  <- ARGV magic
-	 */
-	if (MAXARG)
-	    mPUSHi(1);		/* 1 = eof(FH) - simple, explicit FH */
-	else if (PL_op->op_flags & OPf_SPECIAL)
-	    mPUSHi(2);		/* 2 = eof()   - ARGV magic */
-	else
-	    mPUSHi(0);		/* 0 = eof     - simple, implicit FH */
-	PUTBACK;
-	ENTER;
-	call_method("EOF", G_SCALAR);
-	LEAVE;
-	SPAGAIN;
-	RETURN;
+	return tied_handle_method1("EOF", SP, io, mg, newSVuv(which));
     }
 
     if (!MAXARG && (PL_op->op_flags & OPf_SPECIAL)) {	/* eof() */
@@ -2076,19 +2102,14 @@ PP(pp_tell)
 
     if (MAXARG != 0)
 	PL_last_in_gv = MUTABLE_GV(POPs);
+    else
+	EXTEND(SP, 1);
     gv = PL_last_in_gv;
 
     if (gv && (io = GvIO(gv))) {
 	MAGIC * const mg = SvTIED_mg((const SV *)io, PERL_MAGIC_tiedscalar);
 	if (mg) {
-	    PUSHMARK(SP);
-	    XPUSHs(SvTIED_obj(MUTABLE_SV(io), mg));
-	    PUTBACK;
-	    ENTER;
-	    call_method("TELL", G_SCALAR);
-	    LEAVE;
-	    SPAGAIN;
-	    RETURN;
+	    return tied_handle_method("TELL", SP, io, mg);
 	}
     }
     else if (!gv) {
@@ -2122,20 +2143,14 @@ PP(pp_sysseek)
     if (gv && (io = GvIO(gv))) {
 	MAGIC * const mg = SvTIED_mg((const SV *)io, PERL_MAGIC_tiedscalar);
 	if (mg) {
-	    PUSHMARK(SP);
-	    XPUSHs(SvTIED_obj(MUTABLE_SV(io), mg));
 #if LSEEKSIZE > IVSIZE
-	    mXPUSHn((NV) offset);
+	    SV *const offset_sv = newSVnv((NV) offset);
 #else
-	    mXPUSHi(offset);
+	    SV *const offset_sv = newSViv(offset);
 #endif
-	    mXPUSHi(whence);
-	    PUTBACK;
-	    ENTER;
-	    call_method("SEEK", G_SCALAR);
-	    LEAVE;
-	    SPAGAIN;
-	    RETURN;
+
+	    return tied_handle_method2("SEEK", SP, io, mg, offset_sv,
+				       newSViv(whence));
 	}
     }
 
@@ -2360,7 +2375,6 @@ PP(pp_flock)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "flock()");
-    return NORMAL;
 #endif
 }
 
@@ -2413,7 +2427,6 @@ PP(pp_socket)
     RETPUSHYES;
 #else
     DIE(aTHX_ PL_no_sock_func, "socket");
-    return NORMAL;
 #endif
 }
 
@@ -2475,7 +2488,6 @@ PP(pp_sockpair)
     RETPUSHYES;
 #else
     DIE(aTHX_ PL_no_sock_func, "socketpair");
-    return NORMAL;
 #endif
 }
 
@@ -2507,7 +2519,6 @@ nuts:
     RETPUSHUNDEF;
 #else
     DIE(aTHX_ PL_no_sock_func, "bind");
-    return NORMAL;
 #endif
 }
 
@@ -2538,7 +2549,6 @@ nuts:
     RETPUSHUNDEF;
 #else
     DIE(aTHX_ PL_no_sock_func, "connect");
-    return NORMAL;
 #endif
 }
 
@@ -2565,7 +2575,6 @@ nuts:
     RETPUSHUNDEF;
 #else
     DIE(aTHX_ PL_no_sock_func, "listen");
-    return NORMAL;
 #endif
 }
 
@@ -2645,7 +2654,6 @@ badexit:
 
 #else
     DIE(aTHX_ PL_no_sock_func, "accept");
-    return NORMAL;
 #endif
 }
 
@@ -2670,7 +2678,6 @@ nuts:
     RETPUSHUNDEF;
 #else
     DIE(aTHX_ PL_no_sock_func, "shutdown");
-    return NORMAL;
 #endif
 }
 
@@ -2748,7 +2755,6 @@ nuts2:
 
 #else
     DIE(aTHX_ PL_no_sock_func, PL_op_desc[PL_op->op_type]);
-    return NORMAL;
 #endif
 }
 
@@ -2813,7 +2819,6 @@ nuts2:
 
 #else
     DIE(aTHX_ PL_no_sock_func, PL_op_desc[PL_op->op_type]);
-    return NORMAL;
 #endif
 }
 
@@ -2959,6 +2964,53 @@ PP(pp_stat)
     RETURN;
 }
 
+#define tryAMAGICftest_MG(chr) STMT_START { \
+	if ( (SvFLAGS(TOPs) & (SVf_ROK|SVs_GMG)) \
+		&& S_try_amagic_ftest(aTHX_ chr)) \
+	    return NORMAL; \
+    } STMT_END
+
+STATIC bool
+S_try_amagic_ftest(pTHX_ char chr) {
+    dVAR;
+    dSP;
+    SV* const arg = TOPs;
+
+    assert(chr != '?');
+    SvGETMAGIC(arg);
+
+    if ((PL_op->op_flags & OPf_KIDS)
+	    && SvAMAGIC(TOPs))
+    {
+	const char tmpchr = chr;
+	const OP *next;
+	SV * const tmpsv = amagic_call(arg,
+				newSVpvn_flags(&tmpchr, 1, SVs_TEMP),
+				ftest_amg, AMGf_unary);
+
+	if (!tmpsv)
+	    return FALSE;
+
+	SPAGAIN;
+
+	next = PL_op->op_next;
+	if (next->op_type >= OP_FTRREAD &&
+	    next->op_type <= OP_FTBINARY &&
+	    next->op_private & OPpFT_STACKED
+	) {
+	    if (SvTRUE(tmpsv))
+		/* leave the object alone */
+		return TRUE;
+	}
+
+	SETs(tmpsv);
+	PUTBACK;
+	return TRUE;
+    }
+    return FALSE;
+}
+
+
 /* This macro is used by the stacked filetest operators :
  * if the previous filetest failed, short-circuit and pass its value.
  * Else, discard it from the stack and continue. --rgs
@@ -3001,7 +3053,7 @@ PP(pp_ftrread)
     case OP_FTEWRITE:	opchar = 'w'; break;
     case OP_FTEEXEC:	opchar = 'x'; break;
     }
-    tryAMAGICftest(opchar);
+    tryAMAGICftest_MG(opchar);
 
     STACKED_FTEST_CHECK;
 
@@ -3105,7 +3157,7 @@ PP(pp_ftis)
     case OP_FTCTIME:	opchar = 'C'; break;
     case OP_FTATIME:	opchar = 'A'; break;
     }
-    tryAMAGICftest(opchar);
+    tryAMAGICftest_MG(opchar);
 
     STACKED_FTEST_CHECK;
 
@@ -3162,7 +3214,7 @@ PP(pp_ftrowned)
     case OP_FTSGID:	opchar = 'g'; break;
     case OP_FTSVTX:	opchar = 'k'; break;
     }
-    tryAMAGICftest(opchar);
+    tryAMAGICftest_MG(opchar);
 
     /* I believe that all these three are likely to be defined on most every
        system these days.  */
@@ -3250,7 +3302,7 @@ PP(pp_ftlink)
     dSP;
     I32 result;
 
-    tryAMAGICftest('l');
+    tryAMAGICftest_MG('l');
     result = my_lstat();
     SPAGAIN;
 
@@ -3269,7 +3321,7 @@ PP(pp_fttty)
     GV *gv;
     SV *tmpsv = NULL;
 
-    tryAMAGICftest('t');
+    tryAMAGICftest_MG('t');
 
     STACKED_FTEST_CHECK;
 
@@ -3320,7 +3372,7 @@ PP(pp_fttext)
     GV *gv;
     PerlIO *fp;
 
-    tryAMAGICftest(PL_op->op_type == OP_FTTEXT ? 'T' : 'B');
+    tryAMAGICftest_MG(PL_op->op_type == OP_FTTEXT ? 'T' : 'B');
 
     STACKED_FTEST_CHECK;
 
@@ -3568,7 +3620,6 @@ PP(pp_chroot)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "chroot");
-    return NORMAL;
 #endif
 }
 
@@ -3643,7 +3694,6 @@ PP(pp_link)
 {
     /* Have neither.  */
     DIE(aTHX_ PL_no_func, PL_op_desc[PL_op->op_type]);
-    return NORMAL;
 }
 #endif
 
@@ -3662,7 +3712,6 @@ PP(pp_readlink)
 #endif
     tmps = POPpconstx;
     len = readlink(tmps, buf, sizeof(buf) - 1);
-    EXTEND(SP, 1);
     if (len < 0)
 	RETPUSHUNDEF;
     PUSHp(buf, len);
@@ -3859,7 +3908,6 @@ nope:
     RETPUSHUNDEF;
 #else
     DIE(aTHX_ PL_no_dir_func, "opendir");
-    return NORMAL;
 #endif
 }
 
@@ -3867,7 +3915,6 @@ PP(pp_readdir)
 {
 #if !defined(Direntry_t) || !defined(HAS_READDIR)
     DIE(aTHX_ PL_no_dir_func, "readdir");
-    return NORMAL;
 #else
 #if !defined(I_DIRENT) && !defined(VMS)
     Direntry_t *readdir (DIR *);
@@ -3946,7 +3993,6 @@ nope:
     RETPUSHUNDEF;
 #else
     DIE(aTHX_ PL_no_dir_func, "telldir");
-    return NORMAL;
 #endif
 }
 
@@ -3972,7 +4018,6 @@ nope:
     RETPUSHUNDEF;
 #else
     DIE(aTHX_ PL_no_dir_func, "seekdir");
-    return NORMAL;
 #endif
 }
 
@@ -3996,7 +4041,6 @@ nope:
     RETPUSHUNDEF;
 #else
     DIE(aTHX_ PL_no_dir_func, "rewinddir");
-    return NORMAL;
 #endif
 }
 
@@ -4029,7 +4073,6 @@ nope:
     RETPUSHUNDEF;
 #else
     DIE(aTHX_ PL_no_dir_func, "closedir");
-    return NORMAL;
 #endif
 }
 
@@ -4076,7 +4119,6 @@ PP(pp_fork)
     RETURN;
 #  else
     DIE(aTHX_ PL_no_func, "fork");
-    return NORMAL;
 #  endif
 #endif
 }
@@ -4106,7 +4148,6 @@ PP(pp_wait)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "wait");
-    return NORMAL;
 #endif
 }
 
@@ -4137,7 +4178,6 @@ PP(pp_waitpid)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "waitpid");
-    return NORMAL;
 #endif
 }
 
@@ -4343,7 +4383,6 @@ PP(pp_getppid)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "getppid");
-    return NORMAL;
 #endif
 }
 
@@ -4365,7 +4404,6 @@ PP(pp_getpgrp)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "getpgrp()");
-    return NORMAL;
 #endif
 }
 
@@ -4399,7 +4437,6 @@ PP(pp_setpgrp)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "setpgrp()");
-    return NORMAL;
 #endif
 }
 
@@ -4413,7 +4450,6 @@ PP(pp_getpriority)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "getpriority()");
-    return NORMAL;
 #endif
 }
 
@@ -4429,7 +4465,6 @@ PP(pp_setpriority)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "setpriority()");
-    return NORMAL;
 #endif
 }
 
@@ -4480,7 +4515,6 @@ PP(pp_tms)
     RETURN;
 #   else
     DIE(aTHX_ "times not implemented");
-    return NORMAL;
 #   endif
 #endif /* HAS_TIMES */
 }
@@ -4514,22 +4548,22 @@ PP(pp_gmtime)
 	when = (Time64_T)now;
     }
     else {
-	double input = Perl_floor(POPn);
+	NV input = Perl_floor(POPn);
 	when = (Time64_T)input;
 	if (when != input) {
 	    Perl_ck_warner(aTHX_ packWARN(WARN_OVERFLOW),
-			   "%s(%.0f) too large", opname, input);
+			   "%s(%.0" NVff ") too large", opname, input);
 	}
     }
 
     if ( TIME_LOWER_BOUND > when ) {
 	Perl_ck_warner(aTHX_ packWARN(WARN_OVERFLOW),
-		       "%s(%.0f) too small", opname, when);
+		       "%s(%.0" NVff ") too small", opname, when);
 	err = NULL;
     }
     else if( when > TIME_UPPER_BOUND ) {
 	Perl_ck_warner(aTHX_ packWARN(WARN_OVERFLOW),
-		       "%s(%.0f) too large", opname, when);
+		       "%s(%.0" NVff ") too large", opname, when);
 	err = NULL;
     }
     else {
@@ -4542,7 +4576,7 @@ PP(pp_gmtime)
     if (err == NULL) {
 	/* XXX %lld broken for quads */
 	Perl_ck_warner(aTHX_ packWARN(WARN_OVERFLOW),
-		       "%s(%.0f) failed", opname, (double)when);
+		       "%s(%.0" NVff ") failed", opname, when);
     }
 
     if (GIMME != G_ARRAY) {	/* scalar context */
@@ -4591,14 +4625,12 @@ PP(pp_alarm)
     int anum;
     anum = POPi;
     anum = alarm((unsigned int)anum);
-    EXTEND(SP, 1);
     if (anum < 0)
 	RETPUSHUNDEF;
     PUSHi(anum);
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "alarm");
-    return NORMAL;
 #endif
 }
 
@@ -4668,7 +4700,6 @@ PP(pp_semget)
     RETURN;
 #else
     DIE(aTHX_ "System V IPC is not implemented on this machine");
-    return NORMAL;
 #endif
 }
 
@@ -4804,7 +4835,6 @@ PP(pp_ghostent)
     RETURN;
 #else
     DIE(aTHX_ PL_no_sock_func, "gethostent");
-    return NORMAL;
 #endif
 }
 
@@ -4878,7 +4908,6 @@ PP(pp_gnetent)
     RETURN;
 #else
     DIE(aTHX_ PL_no_sock_func, "getnetent");
-    return NORMAL;
 #endif
 }
 
@@ -4939,7 +4968,6 @@ PP(pp_gprotoent)
     RETURN;
 #else
     DIE(aTHX_ PL_no_sock_func, "getprotoent");
-    return NORMAL;
 #endif
 }
 
@@ -5015,7 +5043,6 @@ PP(pp_gservent)
     RETURN;
 #else
     DIE(aTHX_ PL_no_sock_func, "getservent");
-    return NORMAL;
 #endif
 }
 
@@ -5027,7 +5054,6 @@ PP(pp_shostent)
     RETSETYES;
 #else
     DIE(aTHX_ PL_no_sock_func, "sethostent");
-    return NORMAL;
 #endif
 }
 
@@ -5039,7 +5065,6 @@ PP(pp_snetent)
     RETSETYES;
 #else
     DIE(aTHX_ PL_no_sock_func, "setnetent");
-    return NORMAL;
 #endif
 }
 
@@ -5051,7 +5076,6 @@ PP(pp_sprotoent)
     RETSETYES;
 #else
     DIE(aTHX_ PL_no_sock_func, "setprotoent");
-    return NORMAL;
 #endif
 }
 
@@ -5063,7 +5087,6 @@ PP(pp_sservent)
     RETSETYES;
 #else
     DIE(aTHX_ PL_no_sock_func, "setservent");
-    return NORMAL;
 #endif
 }
 
@@ -5076,7 +5099,6 @@ PP(pp_ehostent)
     RETPUSHYES;
 #else
     DIE(aTHX_ PL_no_sock_func, "endhostent");
-    return NORMAL;
 #endif
 }
 
@@ -5089,7 +5111,6 @@ PP(pp_enetent)
     RETPUSHYES;
 #else
     DIE(aTHX_ PL_no_sock_func, "endnetent");
-    return NORMAL;
 #endif
 }
 
@@ -5102,7 +5123,6 @@ PP(pp_eprotoent)
     RETPUSHYES;
 #else
     DIE(aTHX_ PL_no_sock_func, "endprotoent");
-    return NORMAL;
 #endif
 }
 
@@ -5115,7 +5135,6 @@ PP(pp_eservent)
     RETPUSHYES;
 #else
     DIE(aTHX_ PL_no_sock_func, "endservent");
-    return NORMAL;
 #endif
 }
 
@@ -5349,7 +5368,6 @@ PP(pp_gpwent)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, PL_op_desc[PL_op->op_type]);
-    return NORMAL;
 #endif
 }
 
@@ -5361,7 +5379,6 @@ PP(pp_spwent)
     RETPUSHYES;
 #else
     DIE(aTHX_ PL_no_func, "setpwent");
-    return NORMAL;
 #endif
 }
 
@@ -5373,7 +5390,6 @@ PP(pp_epwent)
     RETPUSHYES;
 #else
     DIE(aTHX_ PL_no_func, "endpwent");
-    return NORMAL;
 #endif
 }
 
@@ -5448,7 +5464,6 @@ PP(pp_ggrent)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, PL_op_desc[PL_op->op_type]);
-    return NORMAL;
 #endif
 }
 
@@ -5460,7 +5475,6 @@ PP(pp_sgrent)
     RETPUSHYES;
 #else
     DIE(aTHX_ PL_no_func, "setgrent");
-    return NORMAL;
 #endif
 }
 
@@ -5472,7 +5486,6 @@ PP(pp_egrent)
     RETPUSHYES;
 #else
     DIE(aTHX_ PL_no_func, "endgrent");
-    return NORMAL;
 #endif
 }
 
@@ -5488,7 +5501,6 @@ PP(pp_getlogin)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "getlogin");
-    return NORMAL;
 #endif
 }
 
@@ -5587,7 +5599,6 @@ PP(pp_syscall)
     RETURN;
 #else
     DIE(aTHX_ PL_no_func, "syscall");
-    return NORMAL;
 #endif
 }
 

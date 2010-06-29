@@ -2,7 +2,7 @@ package charnames;
 use strict;
 use warnings;
 use File::Spec;
-our $VERSION = '1.07';
+our $VERSION = '1.08';
 
 use bytes ();		# for $bytes::hint_bits
 
@@ -256,13 +256,16 @@ sub viacode
 
   my $arg = shift;
 
-  # this comes actually from Unicode::UCD, where it is the named
-  # function _getcode (), but it avoids the overhead of loading it
+  # this is derived from Unicode::UCD, where it is nearly the same as the
+  # function _getcode(), but it makes sure that even a hex argument has the
+  # proper number of leading zeros, which is critical in matching against $txt
+  # below
   my $hex;
   if ($arg =~ /^[1-9]\d*$/) {
     $hex = sprintf "%04X", $arg;
   } elsif ($arg =~ /^(?:[Uu]\+|0[xX])?([[:xdigit:]]+)$/) {
-    $hex = $1;
+    # Below is the line that differs from the _getcode() source
+    $hex = sprintf "%04X", hex $1;
   } else {
     carp("unexpected arg \"$arg\" to charnames::viacode()");
     return;
@@ -301,13 +304,13 @@ sub vianame
   $txt = do "unicore/Name.pl" unless $txt;
 
   my $pos = index $txt, "\t\t$arg\n";
-  if ($[ <= $pos) {
+  if (0 <= $pos) {
     my $posLF = rindex $txt, "\n", $pos;
     (my $code = substr $txt, $posLF + 1, 6) =~ tr/\t//d;
     return $vianame{$arg} = CORE::hex $code;
 
-    # If $pos is at the 1st line, $posLF must be $[ - 1 (not found);
-    # then $posLF + 1 equals to $[ (at the beginning of $txt).
+    # If $pos is at the 1st line, $posLF must be -1 (not found);
+    # then $posLF + 1 equals to 0 (at the beginning of $txt).
     # Otherwise $posLF is the position of "\n";
     # then $posLF + 1 must be the position of the next to "\n"
     # (the beginning of the line).
@@ -553,8 +556,6 @@ past U+10FFFF you do get a warning.)  See L</BUGS> below.
 
 viacode should return an empty string for unassigned in-range Unicode code
 points, as that is their correct current name.
-
-viacode(0) doesn't return C<NULL>, but C<undef>
 
 vianame returns a chr if the input name is of the form C<U+...>, and an ord
 otherwise.  It is planned to change this to always return an ord.

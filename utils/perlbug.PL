@@ -456,11 +456,12 @@ EOF
     }
 
     # Prompt for return address, if needed
-    unless ($from) {
+    unless ($::opt_r) {
 	# Try and guess return address
 	my $guess;
 
-	$guess = $ENV{'REPLY-TO'} || $ENV{'REPLYTO'} || $ENV{'EMAIL'} || '';
+	$guess = $ENV{'REPLY-TO'} || $ENV{'REPLYTO'} || $ENV{'EMAIL'}
+	    || $from || '';
         if ($Is_MacOS) {
             require Mac::InternetConfig;
             $guess = $Mac::InternetConfig::InternetConfig{
@@ -716,6 +717,10 @@ EOF
 sub Dump {
     local(*OUT) = @_;
 
+    # these won't have been set if run with -d
+    $category ||= 'core';
+    $severity ||= 'low';
+
     print OUT <<EFF;
 ---
 Flags:
@@ -784,6 +789,7 @@ EOF
 	my $value;
 	foreach (sort keys %::Config) {
 	    $value = $::Config{$_};
+	    $value = '' unless defined $value;
 	    $value =~ s/'/\\'/g;
 	    print OUT "$_='$value'\n";
 	}

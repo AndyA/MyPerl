@@ -1568,7 +1568,7 @@ PP(pp_sort)
 	}
 	else {
 	    if (SvREADONLY(av))
-		Perl_croak(aTHX_ "%s", PL_no_modify);
+		Perl_croak_no_modify(aTHX);
 	    else
 		SvREADONLY_on(av);
 	    p1 = p2 = AvARRAY(av);
@@ -1589,33 +1589,23 @@ PP(pp_sort)
 	    if (!PL_sortcop) {
 		if (priv & OPpSORT_NUMERIC) {
 		    if (priv & OPpSORT_INTEGER) {
-			if (!SvIOK(*p1)) {
-			    if (SvAMAGIC(*p1))
-				overloading = 1;
-			    else
-				(void)sv_2iv(*p1);
-			}
+			if (!SvIOK(*p1))
+			    (void)sv_2iv_flags(*p1, SV_GMAGIC|SV_SKIP_OVERLOAD);
 		    }
 		    else {
-			if (!SvNSIOK(*p1)) {
-			    if (SvAMAGIC(*p1))
-				overloading = 1;
-			    else
-				(void)sv_2nv(*p1);
-			}
+			if (!SvNSIOK(*p1))
+			    (void)sv_2nv_flags(*p1, SV_GMAGIC|SV_SKIP_OVERLOAD);
 			if (all_SIVs && !SvSIOK(*p1))
 			    all_SIVs = 0;
 		    }
 		}
 		else {
-		    if (!SvPOK(*p1)) {
-			if (SvAMAGIC(*p1))
-			    overloading = 1;
-			else
-			    (void)sv_2pv_flags(*p1, 0,
-					       SV_GMAGIC|SV_CONST_RETURN);
-		    }
+		    if (!SvPOK(*p1))
+			(void)sv_2pv_flags(*p1, 0,
+			    SV_GMAGIC|SV_CONST_RETURN|SV_SKIP_OVERLOAD);
 		}
+		if (SvAMAGIC(*p1))
+		    overloading = 1;
 	    }
 	    p1++;
 	}
@@ -1688,9 +1678,9 @@ PP(pp_sort)
 		    sort_flags);
 
 	    if (!(flags & OPf_SPECIAL)) {
-		LEAVESUB(cv);
-		if (!is_xsub)
-		    CvDEPTH(cv)--;
+		SV *sv;
+		POPSUB(cx, sv);
+		LEAVESUB(sv);
 	    }
 	    POPBLOCK(cx,PL_curpm);
 	    PL_stack_sp = newsp;
@@ -1781,8 +1771,13 @@ S_sortcv_stacked(pTHX_ SV *const a, SV *const b)
 
     PERL_ARGS_ASSERT_SORTCV_STACKED;
 
+    if (AvREAL(av)) {
+	av_clear(av);
+	AvREAL_off(av);
+	AvREIFY_on(av);
+    }
     if (AvMAX(av) < 1) {
-	SV** ary = AvALLOC(av);
+	SV **ary = AvALLOC(av);
 	if (AvARRAY(av) != ary) {
 	    AvMAX(av) += AvARRAY(av) - AvALLOC(av);
 	    AvARRAY(av) = ary;
@@ -1791,6 +1786,7 @@ S_sortcv_stacked(pTHX_ SV *const a, SV *const b)
 	    AvMAX(av) = 1;
 	    Renew(ary,2,SV*);
 	    AvARRAY(av) = ary;
+	    AvALLOC(av) = ary;
 	}
     }
     AvFILLp(av) = 1;

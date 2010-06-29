@@ -337,7 +337,7 @@ sub FETCH {
 }
 package main;
 tie $a->{foo}, "Foo", $a, "foo";
-$a->{foo}; # access once
+my $s = $a->{foo}; # access once
 # the hash element should not be tied anymore
 print defined tied $a->{foo} ? "not ok" : "ok";
 EXPECT
@@ -768,3 +768,172 @@ foreach ($a[0], $h{a}) {
 }
 # on failure, chucks up 'premature free' etc messages
 EXPECT
+########
+# RT 5475:
+# the initial fix for this bug caused tied scalar FETCH to be called
+# multiple times when that scalar was an element in an array. Check it
+# only gets called once now.
+
+sub TIESCALAR { bless [], $_[0] }
+my $c = 0;
+sub FETCH { $c++; 0 }
+sub FETCHSIZE { 1 }
+sub STORE { $c += 100; 0 }
+
+
+my (@a, %h);
+tie $a[0],   'main';
+tie $h{foo}, 'main';
+
+my $i = 0;
+my $x = $a[0] + $h{foo} + $a[$i] + (@a)[0];
+print "x=$x c=$c\n";
+EXPECT
+x=0 c=4
+########
+# Bug 68192 - numeric ops not calling mg_get when tied scalar holds a ref
+sub TIESCALAR { bless {}, __PACKAGE__ };
+sub STORE {};
+sub FETCH {
+ print "fetching... "; # make sure FETCH is called once per op
+ 123456
+};
+my $foo;
+tie $foo, __PACKAGE__;
+my $a = [1234567];
+$foo = $a;
+print "+   ", 0 + $foo, "\n";
+print "**  ", $foo**1, "\n";
+print "*   ", $foo*1, "\n";
+print "/   ", $foo*1, "\n";
+print "%   ", $foo%123457, "\n";
+print "-   ", $foo-0, "\n";
+print "neg ", - -$foo, "\n";
+print "int ", int $foo, "\n";
+print "abs ", abs $foo, "\n";
+print "==  ", 123456 == $foo, "\n";
+print "<   ", 123455 < $foo, "\n";
+print ">   ", 123457 > $foo, "\n";
+print "<=  ", 123456 <= $foo, "\n";
+print ">=  ", 123456 >= $foo, "\n";
+print "!=  ", 0 != $foo, "\n";
+print "<=> ", 123457 <=> $foo, "\n";
+EXPECT
+fetching... +   123456
+fetching... **  123456
+fetching... *   123456
+fetching... /   123456
+fetching... %   123456
+fetching... -   123456
+fetching... neg 123456
+fetching... int 123456
+fetching... abs 123456
+fetching... ==  1
+fetching... <   1
+fetching... >   1
+fetching... <=  1
+fetching... >=  1
+fetching... !=  1
+fetching... <=> 1
+########
+# Ties returning overloaded objects
+{
+ package overloaded;
+ use overload
+  '*{}' => sub { print '*{}'; \*100 },
+  '@{}' => sub { print '@{}'; \@100 },
+  '%{}' => sub { print '%{}'; \%100 },
+  '${}' => sub { print '${}'; \$100 },
+  map {
+   my $op = $_;
+   $_ => sub { print "$op"; 100 }
+  } qw< 0+ "" + ** * / % - neg int abs == < > <= >= != <=> >
+}
+$o = bless [], overloaded;
+
+sub TIESCALAR { bless {}, "" }
+sub FETCH { print "fetching... "; $o }
+sub STORE{}
+tie $ghew, "";
+
+$ghew=undef; 1+$ghew; print "\n";
+$ghew=undef; $ghew**1; print "\n";
+$ghew=undef; $ghew*1; print "\n";
+$ghew=undef; $ghew/1; print "\n";
+$ghew=undef; $ghew%1; print "\n";
+$ghew=undef; $ghew-1; print "\n";
+$ghew=undef; -$ghew; print "\n";
+$ghew=undef; int $ghew; print "\n";
+$ghew=undef; abs $ghew; print "\n";
+$ghew=undef; 1 == $ghew; print "\n";
+$ghew=undef; $ghew<1; print "\n";
+$ghew=undef; $ghew>1; print "\n";
+$ghew=undef; $ghew<=1; print "\n";
+$ghew=undef; $ghew >=1; print "\n";
+$ghew=undef; $ghew != 1; print "\n";
+$ghew=undef; $ghew<=>1; print "\n";
+$ghew=\*shrext; *$ghew; print "\n";
+$ghew=\@spled; @$ghew; print "\n";
+$ghew=\%frit; %$ghew; print "\n";
+$ghew=\$drile; $$ghew; print "\n";
+EXPECT
+fetching... +
+fetching... **
+fetching... *
+fetching... /
+fetching... %
+fetching... -
+fetching... neg
+fetching... int
+fetching... abs
+fetching... ==
+fetching... <
+fetching... >
+fetching... <=
+fetching... >=
+fetching... !=
+fetching... <=>
+fetching... *{}
+fetching... @{}
+fetching... %{}
+fetching... ${}
+########
+# RT 51636: segmentation fault with array ties
+
+tie my @a, 'T';
+@a = (1);
+print "ok\n"; # if we got here we didn't crash
+
+package T;
+
+sub TIEARRAY { bless {} }
+sub STORE    { tie my @b, 'T' }
+sub CLEAR    { }
+sub EXTEND   { }
+
+EXPECT
+ok
+########
+# RT 8438: Tied scalars don't call FETCH when subref is dereferenced
+
+sub TIESCALAR { bless {} }
+
+my $fetch = 0;
+my $called = 0;
+sub FETCH { $fetch++; sub { $called++ } }
+
+tie my $f, 'main';
+$f->(1) for 1,2;
+print "fetch=$fetch\ncalled=$called\n";
+
+EXPECT
+fetch=2
+called=2
+########
+# tie mustn't attempt to call methods on bareword filehandles.
+sub IO::File::TIEARRAY {
+    die "Did not want to invoke IO::File::TIEARRAY";
+}
+fileno FOO; tie @a, "FOO"
+EXPECT
+Can't locate object method "TIEARRAY" via package "FOO" at - line 5.

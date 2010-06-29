@@ -3197,14 +3197,6 @@ typedef pthread_key_t	perl_key;
 #  endif
 #endif
 
-#if !defined(PERL_CORE) && !defined(PERL_NO_SHORT_NAMES)
-#  if defined(PERL_IMPLICIT_CONTEXT)
-#    define pmflag(a,b)		Perl_pmflag(aTHX_ a,b)
-#  else
-#    define pmflag			Perl_pmflag
-#  endif
-#endif
-
 #ifdef HASATTRIBUTE_DEPRECATED
 #  define __attribute__deprecated__         __attribute__((deprecated))
 #endif
@@ -3332,6 +3324,7 @@ union any {
     void*	any_ptr;
     I32		any_i32;
     IV		any_iv;
+    UV		any_uv;
     long	any_long;
     bool	any_bool;
     void	(*any_dptr) (void*);
@@ -3453,9 +3446,6 @@ typedef struct magic_state MGS;	/* struct magic_state defined in mg.c */
 struct scan_data_t;		/* Used in S_* functions in regcomp.c */
 struct regnode_charclass_class;	/* Used in S_* functions in regcomp.c */
 
-/* Keep next first in this structure, because sv_free_arenas take
-   advantage of this to share code between the pte arenas and the SV
-   body arenas  */
 struct ptr_tbl_ent {
     struct ptr_tbl_ent*		next;
     const void*			oldval;
@@ -3466,6 +3456,9 @@ struct ptr_tbl {
     struct ptr_tbl_ent**	tbl_ary;
     UV				tbl_max;
     UV				tbl_items;
+    struct ptr_tbl_arena	*tbl_arena;
+    struct ptr_tbl_ent		*tbl_arena_next;
+    struct ptr_tbl_ent		*tbl_arena_end;
 };
 
 #if defined(iAPX286) || defined(M_I286) || defined(I80286)
@@ -3818,10 +3811,10 @@ Gid_t getegid (void);
 
 
 #define DEBUG_SCOPE(where) \
-    DEBUG_l(WITH_THR( \
+    DEBUG_l( \
     Perl_deb(aTHX_ "%s scope %ld (savestack=%ld) at %s:%d\n",	\
 		    where, (long)PL_scopestack_ix, (long)PL_savestack_ix, \
-		    __FILE__, __LINE__)));
+		    __FILE__, __LINE__));
 
 
 
@@ -4196,6 +4189,7 @@ typedef void (CPERLscope(*share_proc_t)) (pTHX_ SV *sv);
 typedef int  (CPERLscope(*thrhook_proc_t)) (pTHX);
 typedef OP* (CPERLscope(*PPADDR_t)[]) (pTHX);
 typedef bool (CPERLscope(*destroyable_proc_t)) (pTHX_ SV *sv);
+typedef void (CPERLscope(*despatch_signals_proc_t)) (pTHX);
 
 /* _ (for $_) must be first in the following list (DEFSV requires it) */
 #define THREADSV_NAMES "_123456789&`'+/.,\\\";^-%=|~:\001\005!@"
@@ -5032,6 +5026,19 @@ START_EXTERN_C
  * not the same beast. ANSI doesn't allow the assignment from one to the other.
  * (although most, but not all, compilers are prepared to do it)
  */
+
+/* args are:
+    vtable
+    get
+    set
+    len
+    clear
+    free
+    copy
+    dup
+    local
+*/
+
 MGVTBL_SET(
     PL_vtbl_sv,
     MEMBER_TO_FPTR(Perl_magic_get),
@@ -5684,7 +5691,7 @@ typedef struct am_table_short AMTS;
 
 #ifndef PERL_MICRO
 #	ifndef PERL_ASYNC_CHECK
-#		define PERL_ASYNC_CHECK() if (PL_sig_pending) despatch_signals()
+#		define PERL_ASYNC_CHECK() if (PL_sig_pending) CALL_FPTR(PL_signalhook)(aTHX)
 #	endif
 #endif
 

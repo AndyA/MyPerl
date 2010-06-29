@@ -85,7 +85,7 @@ typedef PERL_BITFIELD16 Optype;
 =for apidoc Amn|U32|GIMME_V
 The XSUB-writer's equivalent to Perl's C<wantarray>.  Returns C<G_VOID>,
 C<G_SCALAR> or C<G_ARRAY> for void, scalar or list context,
-respectively.
+respectively. See L<perlcall> for a usage example.
 
 =for apidoc Amn|U32|GIMME
 A backward-compatible version of C<GIMME_V> which can only return
@@ -191,6 +191,8 @@ Deprecated.  Use C<GIMME_V> instead.
 #define OPpDEREF_AV		32	/*   Want ref to AV. */
 #define OPpDEREF_HV		64	/*   Want ref to HV. */
 #define OPpDEREF_SV		(32|64)	/*   Want ref to SV. */
+/* Private for OP_RV2SV, OP_RV2AV, OP_RV2AV */
+#define OPpDEREFed		4	/* prev op was OPpDEREF */
   /* OP_ENTERSUB only */
 #define OPpENTERSUB_DB		16	/* Debug subroutine. */
 #define OPpENTERSUB_HASTARG	32	/* Called from OP tree. */
@@ -376,6 +378,8 @@ struct pmop {
 #define PMf_GLOBAL	0x00002000	/* pattern had a g modifier */
 #define PMf_CONTINUE	0x00004000	/* don't reset pos() if //g fails */
 #define PMf_EVAL	0x00008000	/* evaluating replacement as expr */
+#define PMf_NONDESTRUCT	0x00010000	/* Return substituted string instead
+					   of modifying it. */
 
 /* The following flags have exact equivalents in regcomp.h with the prefix RXf_
  * which are stored in the regexp->extflags member. If you change them here,

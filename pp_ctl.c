@@ -96,6 +96,7 @@ PP(pp_regcomp)
 
 #define tryAMAGICregexp(rx)			\
     STMT_START {				\
+	SvGETMAGIC(rx);				\
 	if (SvROK(rx) && SvAMAGIC(rx)) {	\
 	    SV *sv = AMG_CALLun(rx, regexp);	\
 	    if (sv) {				\
@@ -324,7 +325,10 @@ PP(pp_substcont)
 	    SvPV_set(dstr, NULL);
 
 	    TAINT_IF(cx->sb_rxtainted & 1);
-	    mPUSHi(saviters - 1);
+	    if (pm->op_pmflags & PMf_NONDESTRUCT)
+		PUSHs(targ);
+	    else
+		mPUSHi(saviters - 1);
 
 	    (void)SvPOK_only_UTF8(targ);
 	    TAINT_IF(cx->sb_rxtainted);
@@ -1572,47 +1576,16 @@ Perl_qerror(pTHX_ SV *err)
 }
 
 void
-Perl_die_where(pTHX_ SV *msv)
+Perl_die_unwind(pTHX_ SV *msv)
 {
     dVAR;
+    SV *exceptsv = sv_mortalcopy(msv);
+    U8 in_eval = PL_in_eval;
+    PERL_ARGS_ASSERT_DIE_UNWIND;
 
-    if (PL_in_eval) {
+    if (in_eval) {
 	I32 cxix;
 	I32 gimme;
-
-	if (msv) {
-	    if (PL_in_eval & EVAL_KEEPERR) {
-                static const char prefix[] = "\t(in cleanup) ";
-		SV * const err = ERRSV;
-		const char *e = NULL;
-		if (!SvPOK(err))
-		    sv_setpvs(err,"");
-		else if (SvCUR(err) >= sizeof(prefix)+SvCUR(msv)-1) {
-		    STRLEN len;
-		    STRLEN msglen;
-		    const char* message = SvPV_const(msv, msglen);
-		    e = SvPV_const(err, len);
-		    e += len - msglen;
-		    if (*e != *message || strNE(e,message))
-			e = NULL;
-		}
-		if (!e) {
-		    STRLEN start;
-		    SvGROW(err, SvCUR(err)+sizeof(prefix)+SvCUR(msv));
-		    sv_catpvn(err, prefix, sizeof(prefix)-1);
-		    sv_catsv(err, msv);
-		    start = SvCUR(err)-SvCUR(msv)-sizeof(prefix)+1;
-		    Perl_ck_warner(aTHX_ packWARN(WARN_MISC), "%s",
-				   SvPVX_const(err)+start);
-		}
-	    }
-	    else {
-		STRLEN msglen;
-		const char* message = SvPV_const(msv, msglen);
-		sv_setpvn(ERRSV, message, msglen);
-		SvFLAGS(ERRSV) |= SvFLAGS(msv) & SVf_UTF8;
-	    }
-	}
 
 	while ((cxix = dopoptoeval(cxstack_ix)) < 0
 	       && PL_curstackinfo->si_prev)
@@ -1623,6 +1596,7 @@ Perl_die_where(pTHX_ SV *msv)
 
 	if (cxix >= 0) {
 	    I32 optype;
+	    SV *namesv;
 	    register PERL_CONTEXT *cx;
 	    SV **newsp;
 
@@ -1632,12 +1606,13 @@ Perl_die_where(pTHX_ SV *msv)
 	    POPBLOCK(cx,PL_curpm);
 	    if (CxTYPE(cx) != CXt_EVAL) {
 		STRLEN msglen;
-		const char* message = SvPVx_const( msv ? msv : ERRSV, msglen);
+		const char* message = SvPVx_const(exceptsv, msglen);
 		PerlIO_write(Perl_error_log, (const char *)"panic: die ", 11);
 		PerlIO_write(Perl_error_log, message, msglen);
 		my_exit(1);
 	    }
 	    POPEVAL(cx);
+	    namesv = cx->blk_eval.old_namesv;
 
 	    if (gimme == G_SCALAR)
 		*++newsp = &PL_sv_undef;
@@ -1652,25 +1627,33 @@ Perl_die_where(pTHX_ SV *msv)
 	    PL_curcop = cx->blk_oldcop;
 
 	    if (optype == OP_REQUIRE) {
-                const char* const msg = SvPVx_nolen_const(ERRSV);
-		SV * const nsv = cx->blk_eval.old_namesv;
-                (void)hv_store(GvHVn(PL_incgv), SvPVX_const(nsv), SvCUR(nsv),
+                const char* const msg = SvPVx_nolen_const(exceptsv);
+                (void)hv_store(GvHVn(PL_incgv),
+                               SvPVX_const(namesv), SvCUR(namesv),
                                &PL_sv_undef, 0);
 		/* note that unlike pp_entereval, pp_require isn't
 		 * supposed to trap errors. So now that we've popped the
 		 * EVAL that pp_require pushed, and processed the error
 		 * message, rethrow the error */
-		DIE(aTHX_ "%sCompilation failed in require",
-		    *msg ? msg : "Unknown error\n");
+		Perl_croak(aTHX_ "%sCompilation failed in require",
+			   *msg ? msg : "Unknown error\n");
+	    }
+	    if (in_eval & EVAL_KEEPERR) {
+		Perl_ck_warner(aTHX_ packWARN(WARN_MISC), "\t(in cleanup) %s",
+			       SvPV_nolen_const(exceptsv));
+	    }
+	    else {
+		sv_setsv(ERRSV, exceptsv);
 	    }
 	    assert(CxTYPE(cx) == CXt_EVAL);
+	    PL_restartjmpenv = cx->blk_eval.cur_top_env;
 	    PL_restartop = cx->blk_eval.retop;
 	    JMPENV_JUMP(3);
 	    /* NOTREACHED */
 	}
     }
 
-    write_to_stderr( msv ? msv : ERRSV );
+    write_to_stderr(exceptsv);
     my_failure_exit();
     /* NOTREACHED */
 }
@@ -2122,6 +2105,7 @@ PP(pp_return)
     SV **newsp;
     PMOP *newpm;
     I32 optype = 0;
+    SV *namesv;
     SV *sv;
     OP *retop = NULL;
 
@@ -2164,6 +2148,7 @@ PP(pp_return)
 	if (!(PL_in_eval & EVAL_KEEPERR))
 	    clear_errsv = TRUE;
 	POPEVAL(cx);
+	namesv = cx->blk_eval.old_namesv;
 	retop = cx->blk_eval.retop;
 	if (CxTRYBLOCK(cx))
 	    break;
@@ -2172,9 +2157,10 @@ PP(pp_return)
 	    (MARK == SP || (gimme == G_SCALAR && !SvTRUE(*SP))) )
 	{
 	    /* Unassume the success we assumed earlier. */
-	    SV * const nsv = cx->blk_eval.old_namesv;
-	    (void)hv_delete(GvHVn(PL_incgv), SvPVX_const(nsv), SvCUR(nsv), G_DISCARD);
-	    DIE(aTHX_ "%"SVf" did not return a true value", SVfARG(nsv));
+	    (void)hv_delete(GvHVn(PL_incgv),
+			    SvPVX_const(namesv), SvCUR(namesv),
+			    G_DISCARD);
+	    DIE(aTHX_ "%"SVf" did not return a true value", SVfARG(namesv));
 	}
 	break;
     case CXt_FORMAT:
@@ -2881,17 +2867,8 @@ S_docatch(pTHX_ OP *o)
 	break;
     case 3:
 	/* die caught by an inner eval - continue inner loop */
-
-	/* NB XXX we rely on the old popped CxEVAL still being at the top
-	 * of the stack; the way die_where() currently works, this
-	 * assumption is valid. In theory The cur_top_env value should be
-	 * returned in another global, the way retop (aka PL_restartop)
-	 * is. */
-	assert(CxTYPE(&cxstack[cxstack_ix+1]) == CXt_EVAL);
-
-	if (PL_restartop
-	    && cxstack[cxstack_ix+1].blk_eval.cur_top_env == PL_top_env)
-	{
+	if (PL_restartop && PL_restartjmpenv == PL_top_env) {
+	    PL_restartjmpenv = NULL;
 	    PL_op = PL_restartop;
 	    PL_restartop = 0;
 	    goto redo_body;
@@ -3158,23 +3135,27 @@ S_doeval(pTHX_ int gimme, OP** startop, CV* outside, U32 seq)
 
     if (yystatus || PL_parser->error_count || !PL_eval_root) {
 	SV **newsp;			/* Used by POPBLOCK. */
-	PERL_CONTEXT *cx = &cxstack[cxstack_ix];
+	PERL_CONTEXT *cx = NULL;
 	I32 optype;			/* Used by POPEVAL. */
+	SV *namesv = NULL;
 	const char *msg;
 
 	PERL_UNUSED_VAR(newsp);
 	PERL_UNUSED_VAR(optype);
 
+	/* note that if yystatus == 3, then the EVAL CX block has already
+	 * been popped, and various vars restored */
 	PL_op = saveop;
-	if (PL_eval_root) {
-	    op_free(PL_eval_root);
-	    PL_eval_root = NULL;
-	}
 	if (yystatus != 3) {
+	    if (PL_eval_root) {
+		op_free(PL_eval_root);
+		PL_eval_root = NULL;
+	    }
 	    SP = PL_stack_base + POPMARK;	/* pop original mark */
 	    if (!startop) {
 		POPBLOCK(cx,PL_curpm);
 		POPEVAL(cx);
+		namesv = cx->blk_eval.old_namesv;
 	    }
 	}
 	lex_end();
@@ -3183,9 +3164,16 @@ S_doeval(pTHX_ int gimme, OP** startop, CV* outside, U32 seq)
 
 	msg = SvPVx_nolen_const(ERRSV);
 	if (in_require) {
-	    const SV * const nsv = cx->blk_eval.old_namesv;
-	    (void)hv_store(GvHVn(PL_incgv), SvPVX_const(nsv), SvCUR(nsv),
-                          &PL_sv_undef, 0);
+	    if (!cx) {
+		/* If cx is still NULL, it means that we didn't go in the
+		 * POPEVAL branch. */
+		cx = &cxstack[cxstack_ix];
+		assert(CxTYPE(cx) == CXt_EVAL);
+		namesv = cx->blk_eval.old_namesv;
+	    }
+	    (void)hv_store(GvHVn(PL_incgv),
+			   SvPVX_const(namesv), SvCUR(namesv),
+			   &PL_sv_undef, 0);
 	    Perl_croak(aTHX_ "%sCompilation failed in require",
 		       *msg ? msg : "Unknown error\n");
 	}
@@ -3373,8 +3361,9 @@ PP(pp_require)
 	    }
 	}
 
-        /* We do this only with use, not require. */
+	/* We do this only with "use", not "require" or "no". */
 	if (PL_compcv &&
+		!(cUNOP->op_first->op_private & OPpCONST_NOVER) &&
 	  /* If we request a version >= 5.9.5, load feature.pm with the
 	   * feature bundle that corresponds to the required version. */
 		vcmp(sv, sv_2mortal(upg_version(newSVnv(5.009005), FALSE))) >= 0) {
@@ -3883,9 +3872,11 @@ PP(pp_leaveeval)
     OP *retop;
     const U8 save_flags = PL_op -> op_flags;
     I32 optype;
+    SV *namesv;
 
     POPBLOCK(cx,newpm);
     POPEVAL(cx);
+    namesv = cx->blk_eval.old_namesv;
     retop = cx->blk_eval.retop;
 
     TAINT_NOT;
@@ -3926,10 +3917,12 @@ PP(pp_leaveeval)
 	!(gimme == G_SCALAR ? SvTRUE(*SP) : SP > newsp))
     {
 	/* Unassume the success we assumed earlier. */
-	SV * const nsv = cx->blk_eval.old_namesv;
-	(void)hv_delete(GvHVn(PL_incgv), SvPVX_const(nsv), SvCUR(nsv), G_DISCARD);
-	retop = Perl_die(aTHX_ "%"SVf" did not return a true value", SVfARG(nsv));
-	/* die_where() did LEAVE, or we won't be here */
+	(void)hv_delete(GvHVn(PL_incgv),
+			SvPVX_const(namesv), SvCUR(namesv),
+			G_DISCARD);
+	retop = Perl_die(aTHX_ "%"SVf" did not return a true value",
+			       SVfARG(namesv));
+	/* die_unwind() did LEAVE, or we won't be here */
     }
     else {
 	LEAVE_with_name("eval");
@@ -4071,14 +4064,38 @@ PP(pp_leavegiven)
     POPBLOCK(cx,newpm);
     assert(CxTYPE(cx) == CXt_GIVEN);
 
-    SP = newsp;
-    PUTBACK;
-
-    PL_curpm = newpm;   /* pop $1 et al */
+    TAINT_NOT;
+    if (gimme == G_VOID)
+	SP = newsp;
+    else if (gimme == G_SCALAR) {
+	register SV **mark;
+	MARK = newsp + 1;
+	if (MARK <= SP) {
+	    if (SvFLAGS(TOPs) & (SVs_PADTMP|SVs_TEMP))
+		*MARK = TOPs;
+	    else
+		*MARK = sv_mortalcopy(TOPs);
+	}
+	else {
+	    MEXTEND(mark,0);
+	    *MARK = &PL_sv_undef;
+	}
+	SP = MARK;
+    }
+    else {
+	/* in case LEAVE wipes old return values */
+	register SV **mark;
+	for (mark = newsp + 1; mark <= SP; mark++) {
+	    if (!(SvFLAGS(*mark) & (SVs_PADTMP|SVs_TEMP))) {
+		*mark = sv_mortalcopy(*mark);
+		TAINT_NOT;	/* Each item is independent */
+	    }
+	}
+    }
+    PL_curpm = newpm;	/* Don't pop $1 et al till now */
 
     LEAVE_with_name("given");
-
-    return NORMAL;
+    RETURN;
 }
 
 /* Helper routines used by pp_smartmatch */
@@ -4146,6 +4163,19 @@ S_do_smartmatch(pTHX_ HV *seen_this, HV *seen_other)
     SV *e = TOPs;	/* e is for 'expression' */
     SV *d = TOPm1s;	/* d is for 'default', as in PL_defgv */
 
+    /* Take care only to invoke mg_get() once for each argument.
+     * Currently we do this by copying the SV if it's magical. */
+    if (d) {
+	if (SvGMAGICAL(d))
+	    d = sv_mortalcopy(d);
+    }
+    else
+	d = &PL_sv_undef;
+
+    assert(e);
+    if (SvGMAGICAL(e))
+	e = sv_mortalcopy(e);
+
     /* First of all, handle overload magic of the rightmost argument */
     if (SvAMAGIC(e)) {
 	SV * tmpsv;
@@ -4164,18 +4194,6 @@ S_do_smartmatch(pTHX_ HV *seen_this, HV *seen_other)
 
     SP -= 2;	/* Pop the values */
 
-    /* Take care only to invoke mg_get() once for each argument. 
-     * Currently we do this by copying the SV if it's magical. */
-    if (d) {
-	if (SvGMAGICAL(d))
-	    d = sv_mortalcopy(d);
-    }
-    else
-	d = &PL_sv_undef;
-
-    assert(e);
-    if (SvGMAGICAL(e))
-	e = sv_mortalcopy(e);
 
     /* ~~ undef */
     if (!SvOK(e)) {
@@ -4618,9 +4636,10 @@ PP(pp_enterwhen)
        fails, we don't want to push a context and then
        pop it again right away, so we skip straight
        to the op that follows the leavewhen.
+       RETURNOP calls PUTBACK which restores the stack pointer after the POPs.
     */
     if ((0 == (PL_op->op_flags & OPf_SPECIAL)) && !SvTRUEx(POPs))
-	return cLOGOP->op_other->op_next;
+	RETURNOP(cLOGOP->op_other->op_next);
 
     ENTER_with_name("eval");
     SAVETMPS;
@@ -4679,7 +4698,8 @@ PP(pp_break)
     I32 cxix;
     register PERL_CONTEXT *cx;
     I32 inner;
-    
+    dSP;
+
     cxix = dopoptogiven(cxstack_ix); 
     if (cxix < 0) {
 	if (PL_op->op_flags & OPf_SPECIAL)
@@ -4703,7 +4723,8 @@ PP(pp_break)
     if (CxFOREACH(cx))
 	return CX_LOOP_NEXTOP_GET(cx);
     else
-	return cx->blk_givwhen.leave_op;
+	/* RETURNOP calls PUTBACK which restores the old old sp */
+	RETURNOP(cx->blk_givwhen.leave_op);
 }
 
 STATIC OP *

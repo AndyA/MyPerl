@@ -15,7 +15,7 @@
 
 #define PERL_REVISION	5		/* age */
 #define PERL_VERSION	13		/* epoch */
-#define PERL_SUBVERSION	0		/* generation */
+#define PERL_SUBVERSION	2		/* generation */
 
 /* The following numbers describe the earliest compatible version of
    Perl ("compatibility" here being defined as sufficient binary/API
@@ -92,6 +92,8 @@ my $seen=0;
 while (<PLIN>) {
     if (/\t,NULL/ and $seen) {
        while (my $c = shift @ARGV){
+	    $c =~ s|\\|\\\\|g;
+	    $c =~ s|"|\\"|g;
             print PLOUT qq{\t,"$c"\n};
        }
     }

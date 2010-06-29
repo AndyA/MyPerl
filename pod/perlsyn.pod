@@ -674,6 +674,45 @@ case to the next:
 	default    { say '$foo does not contain a y' }
     }
 
+=head3 Return value
+
+When a C<given> statement is also a valid expression (e.g.
+when it's the last statement of a block), it evaluates to :
+
+=over 4
+
+=item *
+
+an empty list as soon as an explicit C<break> is encountered.
+
+=item *
+
+the value of the last evaluated expression of the successful
+C<when>/C<default> clause, if there's one.
+
+=item *
+
+the value of the last evaluated expression of the C<given> block if no
+condition is true.
+
+=back
+
+In both last cases, the last expression is evaluated in the context that
+was applied to the C<given> block.
+
+Note that, unlike C<if> and C<unless>, failed C<when> statements always
+evaluate to an empty list.
+
+    my $price = do { given ($item) {
+	when ([ 'pear', 'apple' ]) { 1 }
+	break when 'vote';      # My vote cannot be bought
+        1e10  when /Mona Lisa/;
+        'unknown';
+    } };
+
+Currently, C<given> blocks can't always be used as proper expressions. This
+may be addressed in a future version of perl.
+
 =head3 Switching in a loop
 
 Instead of using C<given()>, you can use a C<foreach()> loop.
@@ -892,7 +931,7 @@ C preprocessors: it matches the regular expression
     # example: '# line 42 "new_filename.plx"'
     /^\#   \s*
       line \s+ (\d+)   \s*
-      (?:\s("?)([^"]+)\2)? \s*
+      (?:\s("?)([^"]+)\g2)? \s*
      $/x
 
 with C<$1> being the line number for the next line, and C<$3> being

@@ -3,7 +3,7 @@ package Unicode::UCD;
 use strict;
 use warnings;
 
-our $VERSION = '0.27';
+our $VERSION = '0.28';
 
 use Storable qw(dclone);
 
@@ -242,7 +242,7 @@ you will need also the L</compexcl()>, and L</casespec()> functions.
 
 =cut
 
-# NB: This function is duplicated in charnames.pm
+# NB: This function is nearly duplicated in charnames.pm
 sub _getcode {
     my $arg = shift;
 

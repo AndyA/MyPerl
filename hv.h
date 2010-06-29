@@ -83,13 +83,11 @@ struct xpvhv_aux {
 /* hash structure: */
 /* This structure must match the beginning of struct xpvmg in sv.h. */
 struct xpvhv {
-    union _xnvu xnv_u;
-    STRLEN      xhv_fill;       /* how full xhv_array currently is */
+    HV*		xmg_stash;	/* class package */
+    union _xmgu	xmg_u;
+    STRLEN      xhv_keys;       /* total keys, including placeholders */
     STRLEN      xhv_max;        /* subscript of last element of xhv_array */
-    _XPVMG_HEAD;
 };
-
-#define xhv_keys xiv_u.xivu_iv
 
 /* hash a key */
 /* FYI: This is the "One-at-a-Time" algorithm by Bob Jenkins
@@ -236,7 +234,7 @@ C<SV*>.
 #  define Nullhv Null(HV*)
 #endif
 #define HvARRAY(hv)	((hv)->sv_u.svu_hash)
-#define HvFILL(hv)	((XPVHV*)  SvANY(hv))->xhv_fill
+#define HvFILL(hv)	Perl_hv_fill(aTHX_ (const HV *)(hv))
 #define HvMAX(hv)	((XPVHV*)  SvANY(hv))->xhv_max
 /* This quite intentionally does no flag checking first. That's your
    responsibility.  */

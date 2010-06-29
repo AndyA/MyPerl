@@ -200,7 +200,6 @@ Perl_pad_new(pTHX_ int flags)
 	 */
 
         AV * const a0 = newAV();			/* will be @_ */
-	av_extend(a0, 0);
 	av_store(pad, 0, MUTABLE_SV(a0));
 	AvREIFY_only(a0);
     }
@@ -421,13 +420,13 @@ Perl_pad_add_name(pTHX_ const char *name, const STRLEN len, const U32 flags,
 	PL_min_intro_pending = offset;
     PL_max_intro_pending = offset;
     /* if it's not a simple scalar, replace with an AV or HV */
-    /* XXX DAPM since slot has been allocated, replace
-     * av_store with PL_curpad[offset] ? */
+    assert(SvTYPE(PL_curpad[offset]) == SVt_NULL);
+    assert(SvREFCNT(PL_curpad[offset]) == 1);
     if (*name == '@')
-	av_store(PL_comppad, offset, MUTABLE_SV(newAV()));
+	sv_upgrade(PL_curpad[offset], SVt_PVAV);
     else if (*name == '%')
-	av_store(PL_comppad, offset, MUTABLE_SV(newHV()));
-    SvPADMY_on(PL_curpad[offset]);
+	sv_upgrade(PL_curpad[offset], SVt_PVHV);
+    assert(SvPADMY(PL_curpad[offset]));
     DEBUG_Xv(PerlIO_printf(Perl_debug_log,
 			   "Pad addname: %ld \"%s\" new lex=0x%"UVxf"\n",
 			   (long)offset, name, PTR2UV(PL_curpad[offset])));
@@ -702,6 +701,28 @@ Perl_find_rundefsvoffset(pTHX)
     int out_flags;
     return pad_findlex("$_", find_runcv(NULL), PL_curcop->cop_seq, 1,
 	    NULL, &out_sv, &out_flags);
+}
+
+/*
+ * Returns a lexical $_, if there is one, at run time ; or the global one
+ * otherwise.
+ */
+
+SV *
+Perl_find_rundefsv(pTHX)
+{
+    SV *namesv;
+    int flags;
+    PADOFFSET po;
+
+    po = pad_findlex("$_", find_runcv(NULL), PL_curcop->cop_seq, 1,
+	    NULL, &namesv, &flags);
+
+    if (po == NOT_IN_PAD
+	|| (SvFLAGS(namesv) & (SVpad_NAME|SVpad_OUR)) == (SVpad_NAME|SVpad_OUR))
+	return DEFSV;
+
+    return PAD_SVl(po);
 }
 
 /*
@@ -1299,27 +1320,37 @@ Perl_pad_tidy(pTHX_ padtidy_type type)
     else if (type == padtidy_SUB) {
 	/* XXX DAPM this same bit of code keeps appearing !!! Rationalise? */
 	AV * const av = newAV();			/* Will be @_ */
-	av_extend(av, 0);
 	av_store(PL_comppad, 0, MUTABLE_SV(av));
 	AvREIFY_only(av);
     }
 
-    /* XXX DAPM rationalise these two similar branches */
-
-    if (type == padtidy_SUB) {
+    if (type == padtidy_SUB || type == padtidy_FORMAT) {
+	SV * const * const namep = AvARRAY(PL_comppad_name);
 	PADOFFSET ix;
 	for (ix = AvFILLp(PL_comppad); ix > 0; ix--) {
 	    if (SvIMMORTAL(PL_curpad[ix]) || IS_PADGV(PL_curpad[ix]) || IS_PADCONST(PL_curpad[ix]))
 		continue;
-	    if (!SvPADMY(PL_curpad[ix]))
+	    if (!SvPADMY(PL_curpad[ix])) {
 		SvPADTMP_on(PL_curpad[ix]);
-	}
-    }
-    else if (type == padtidy_FORMAT) {
-	PADOFFSET ix;
-	for (ix = AvFILLp(PL_comppad); ix > 0; ix--) {
-	    if (!SvPADMY(PL_curpad[ix]) && !SvIMMORTAL(PL_curpad[ix]))
-		SvPADTMP_on(PL_curpad[ix]);
+	    } else if (!SvFAKE(namep[ix])) {
+		/* This is a work around for how the current implementation of
+		   ?{ } blocks in regexps interacts with lexicals.
+
+		   One of our lexicals.
+		   Can't do this on all lexicals, otherwise sub baz() won't
+		   compile in
+
+		   my $foo;
+
+		   sub bar { ++$foo; }
+
+		   sub baz { ++$foo; }
+
+		   because completion of compiling &bar calling pad_tidy()
+		   would cause (top level) $foo to be marked as stale, and
+		   "no longer available".  */
+		SvPADSTALE_on(PL_curpad[ix]);
+	    }
 	}
     }
     PL_curpad = AvARRAY(PL_comppad);
@@ -1731,7 +1762,6 @@ Perl_pad_push(pTHX_ PADLIST *padlist, int depth)
 	    }
 	}
 	av = newAV();
-	av_extend(av, 0);
 	av_store(newpad, 0, MUTABLE_SV(av));
 	AvREIFY_only(av);
 
@@ -1751,6 +1781,129 @@ Perl_pad_compname_type(pTHX_ const PADOFFSET po)
     }
     return NULL;
 }
+
+#if defined(USE_ITHREADS)
+
+#  define av_dup_inc(s,t)	MUTABLE_AV(sv_dup_inc((const SV *)s,t))
+
+AV *
+Perl_padlist_dup(pTHX_ AV *const srcpad, CLONE_PARAMS *const param)
+{
+    AV *dstpad;
+    PERL_ARGS_ASSERT_PADLIST_DUP;
+
+    if (!srcpad)
+	return NULL;
+
+    assert(!AvREAL(srcpad));
+
+    if (param->flags & CLONEf_COPY_STACKS
+	|| SvREFCNT(AvARRAY(srcpad)[1]) > 1) {
+	/* XXX padlists are real, but pretend to be not */
+	AvREAL_on(srcpad);
+	dstpad = av_dup_inc(srcpad, param);
+	AvREAL_off(srcpad);
+	AvREAL_off(dstpad);
+	assert (SvREFCNT(AvARRAY(srcpad)[1]) == 1);
+    } else {
+	/* CvDEPTH() on our subroutine will be set to 0, so there's no need
+	   to build anything other than the first level of pads.  */
+
+	I32 ix = AvFILLp((const AV *)AvARRAY(srcpad)[1]);
+	AV *pad1;
+	const I32 names_fill = AvFILLp((const AV *)(AvARRAY(srcpad)[0]));
+	const AV *const srcpad1 = (const AV *) AvARRAY(srcpad)[1];
+	SV **oldpad = AvARRAY(srcpad1);
+	SV **names;
+	SV **pad1a;
+	AV *args;
+	/* look for it in the table first.
+	   I *think* that it shouldn't be possible to find it there.
+	   Well, except for how Perl_sv_compile_2op() "works" :-(   */
+	dstpad = (AV*)ptr_table_fetch(PL_ptr_table, srcpad);
+
+	if (dstpad)
+	    return dstpad;
+
+	dstpad = newAV();
+	ptr_table_store(PL_ptr_table, srcpad, dstpad);
+	AvREAL_off(dstpad);
+	av_extend(dstpad, 1);
+	AvARRAY(dstpad)[0] = MUTABLE_SV(av_dup_inc(AvARRAY(srcpad)[0], param));
+	names = AvARRAY(AvARRAY(dstpad)[0]);
+
+	pad1 = newAV();
+
+	av_extend(pad1, ix);
+	AvARRAY(dstpad)[1] = MUTABLE_SV(pad1);
+	pad1a = AvARRAY(pad1);
+	AvFILLp(dstpad) = 1;
+
+	if (ix > -1) {
+	    AvFILLp(pad1) = ix;
+
+	    for ( ;ix > 0; ix--) {
+		if (!oldpad[ix]) {
+		    pad1a[ix] = NULL;
+		} else if (names_fill >= ix && names[ix] != &PL_sv_undef) {
+		    const char sigil = SvPVX_const(names[ix])[0];
+		    if ((SvFLAGS(names[ix]) & SVf_FAKE)
+			|| (SvFLAGS(names[ix]) & SVpad_STATE)
+			|| sigil == '&')
+			{
+			    /* outer lexical or anon code */
+			    pad1a[ix] = sv_dup_inc(oldpad[ix], param);
+			}
+		    else {		/* our own lexical */
+			if(SvPADSTALE(oldpad[ix]) && SvREFCNT(oldpad[ix]) > 1) {
+			    /* This is a work around for how the current
+			       implementation of ?{ } blocks in regexps
+			       interacts with lexicals.  */
+			    pad1a[ix] = sv_dup_inc(oldpad[ix], param);
+			} else {
+			    SV *sv; 
+			    
+			    if (sigil == '@')
+				sv = MUTABLE_SV(newAV());
+			    else if (sigil == '%')
+				sv = MUTABLE_SV(newHV());
+			    else
+				sv = newSV(0);
+			    pad1a[ix] = sv;
+			    SvPADMY_on(sv);
+			}
+		    }
+		}
+		else if (IS_PADGV(oldpad[ix]) || IS_PADCONST(oldpad[ix])) {
+		    pad1a[ix] = sv_dup_inc(oldpad[ix], param);
+		}
+		else {
+		    /* save temporaries on recursion? */
+		    SV * const sv = newSV(0);
+		    pad1a[ix] = sv;
+
+		    /* SvREFCNT(oldpad[ix]) != 1 for some code in threads.xs
+		       FIXTHAT before merging this branch.
+		       (And I know how to) */
+		    if (SvPADMY(oldpad[ix]))
+			SvPADMY_on(sv);
+		    else
+			SvPADTMP_on(sv);
+		}
+	    }
+
+	    if (oldpad[0]) {
+		args = newAV();			/* Will be @_ */
+		AvREIFY_only(args);
+		pad1a[0] = (SV *)args;
+	    }
+	}
+    }
+
+    return dstpad;
+}
+
+#endif
 
 /*
  * Local variables:

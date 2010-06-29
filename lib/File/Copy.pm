@@ -22,7 +22,7 @@ sub syscopy;
 sub cp;
 sub mv;
 
-$VERSION = '2.18';
+$VERSION = '2.19';
 
 require Exporter;
 @ISA = qw(Exporter);
@@ -39,13 +39,6 @@ sub croak {
 sub carp {
     require Carp;
     goto &Carp::carp;
-}
-
-my $macfiles;
-if ($^O eq 'MacOS') {
-	$macfiles = eval { require Mac::MoreFiles };
-	warn 'Mac::MoreFiles could not be loaded; using non-native syscopy'
-		if $@ && $^W;
 }
 
 # Look up the feature settings on VMS using VMS::Feature when available.
@@ -91,11 +84,6 @@ sub _catname {
     if (not defined &basename) {
 	require File::Basename;
 	import  File::Basename 'basename';
-    }
-
-    if ($^O eq 'MacOS') {
-	# a partial dir name that's valid only in the cwd (e.g. 'tmp')
-	$to = ':' . $to if $to !~ /:/;
     }
 
     return File::Spec->catfile($to, basename($from));
@@ -166,7 +154,6 @@ sub copy {
 	&& !($from_a_handle && $^O eq 'os2' )	# OS/2 cannot handle handles
 	&& !($from_a_handle && $^O eq 'mpeix')	# and neither can MPE/iX.
 	&& !($from_a_handle && $^O eq 'MSWin32')
-	&& !($from_a_handle && $^O eq 'MacOS')
 	&& !($from_a_handle && $^O eq 'NetWare')
        )
     {
@@ -436,22 +423,6 @@ unless (defined &syscopy) {
 	    return 0 unless @_ == 2;
 	    return Win32::CopyFile(@_, 1);
 	};
-    } elsif ($macfiles) {
-	*syscopy = sub {
-	    my($from, $to) = @_;
-	    my($dir, $toname);
-
-	    return 0 unless -e $from;
-
-	    if ($to =~ /(.*:)([^:]+):?$/) {
-		($dir, $toname) = ($1, $2);
-	    } else {
-		($dir, $toname) = (":", $to);
-	    }
-
-	    unlink($to);
-	    Mac::MoreFiles::FSpFileCopy($from, $dir, $toname, 1);
-	};
     } else {
 	$Syscopy_is_copy = 1;
 	*syscopy = \&copy;
@@ -498,6 +469,12 @@ sort, it will be read from, and if it is a file I<name> it will
 be opened for reading. Likewise, the second argument will be
 written to (and created if need be).  Trying to copy a file on top
 of itself is a fatal error.
+
+If the destination (second argument) already exists and is a directory,
+and the source (first argument) is not a filehandle, then the source
+file will be copied into the directory specified by the destination,
+using the same base name as the source file.  It's a failure to have a
+filehandle as the source when the destination is a directory.
 
 B<Note that passing in
 files as handles instead of names may lead to loss of information

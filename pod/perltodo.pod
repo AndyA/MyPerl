@@ -261,7 +261,7 @@ to do this manually are roughly
 =item *
 
 do a normal C<Configure>, but include Devel::Cover as a module to install
-(see F<INSTALL> for how to do this)
+(see L<INSTALL> for how to do this)
 
 =item *
 
@@ -1242,6 +1242,12 @@ Bottom line on this is probably a new pp_tailcall function which
 combines the code in pp_entersub, pp_leavesub.  This should probably
 be done 1st in XS, and using B::Generate to patch the new OP into the
 optrees.
+
+=head2 Add C<00dddd>
+
+It has been proposed that octal constants be specifiable through the syntax
+C<0oddddd>, parallel to the existing construct to specify hex constants
+C<0xddddd>
 
 =head1 Big projects
 

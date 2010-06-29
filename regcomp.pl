@@ -24,7 +24,7 @@ use warnings;
 open DESC, 'regcomp.sym';
 
 my $ind = 0;
-my (@name,@rest,@type,@code,@args,@longj);
+my (@name,@rest,@type,@code,@args,@flags,@longj);
 my ($desc,$lastregop);
 while (<DESC>) {
     s/#.*$//;
@@ -35,12 +35,12 @@ while (<DESC>) {
         next;
     }
     unless ($lastregop) {
-        $ind++;
-        ($name[$ind], $desc, $rest[$ind]) = split /\t+/, $_, 3;  
-        ($type[$ind], $code[$ind], $args[$ind], $longj[$ind]) 
-          = split /[,\s]\s*/, $desc, 4;
+        ($name[$ind], $desc, $rest[$ind]) = /^(\S+)\s+([^\t]+)\s*;\s*(.*)/;
+        ($type[$ind], $code[$ind], $args[$ind], $flags[$ind], $longj[$ind])
+          = split /[,\s]\s*/, $desc;
+        ++$ind;
     } else {
-        my ($type,@lists)=split /\s*\t+\s*/, $_;
+        my ($type,@lists)=split /\s+/, $_;
         die "No list? $type" if !@lists;
         foreach my $list (@lists) {
             my ($names,$special)=split /:/, $list , 2;
@@ -60,10 +60,10 @@ while (<DESC>) {
                     die "unknown :type ':$special'";
                 }
                 foreach my $suffix (@suffix) {
-                    $ind++;
                     $name[$ind]="$real$suffix";
                     $type[$ind]=$type;
                     $rest[$ind]="state for $type";
+                    ++$ind;
                 }
             }
         }
@@ -78,6 +78,55 @@ my $tot = $ind;
 close DESC;
 die "Too many regexp/state opcodes! Maximum is 256, but there are $lastregop in file!"
     if $lastregop>256;
+
+sub process_flags {
+  my ($flag, $varname, $comment) = @_;
+  $comment = '' unless defined $comment;
+
+  $ind = 0;
+  my @selected;
+  my $bitmap = '';
+  do {
+    my $set = $flags[$ind] && $flags[$ind] eq $flag ? 1 : 0;
+    # Whilst I could do this with vec, I'd prefer to do longhand the arithmetic
+    # ops in the C code.
+    my $current = do {
+      no warnings 'uninitialized';
+      ord do {
+	no warnings 'substr';
+	substr $bitmap, ($ind >> 3);
+      }
+    };
+    substr $bitmap, ($ind >> 3), 1, chr($current | ($set << ($ind & 7)));
+
+    push @selected, $name[$ind] if $set;
+  } while (++$ind < $lastregop);
+  my $out_string = join ', ', @selected, 0;
+  $out_string =~ s/(.{1,70},) /$1\n    /g;
+
+  my $out_mask = join ', ', map {sprintf "0x%02X", ord $_} split '', $bitmap;
+
+  return $comment . <<"EOP";
+#define REGNODE_\U$varname\E(node) (PL_${varname}_bitmask[(node) >> 3] & (1 << ((node) & 7)))
+
+#ifndef DOINIT
+EXTCONST U8 PL_${varname}[] __attribute__deprecated__;
+#else
+EXTCONST U8 PL_${varname}[] __attribute__deprecated__ = {
+    $out_string
+};
+#endif /* DOINIT */
+
+#ifndef DOINIT
+EXTCONST U8 PL_${varname}_bitmask[];
+#else
+EXTCONST U8 PL_${varname}_bitmask[] = {
+    $out_mask
+};
+#endif /* DOINIT */
+
+EOP
+}
 
 my $tmp_h = 'regnodes.h-new';
 
@@ -103,15 +152,14 @@ EOP
 ;
 
 
-for ($ind=1; $ind <= $lastregop ; $ind++) {
-  my $oind = $ind - 1;
+for ($ind=0; $ind < $lastregop ; ++$ind) {
   printf $out "#define\t%*s\t%d\t/* %#04x %s */\n",
-    -$width, $name[$ind], $ind-1, $ind-1, $rest[$ind];
+    -$width, $name[$ind], $ind, $ind, $rest[$ind];
 }
 print $out "\t/* ------------ States ------------- */\n";
-for ( ; $ind <= $tot ; $ind++) {
+for ( ; $ind < $tot ; $ind++) {
   printf $out "#define\t%*s\t(REGNODE_MAX + %d)\t/* %s */\n",
-    -$width, $name[$ind], $ind - $lastregop, $rest[$ind];
+    -$width, $name[$ind], $ind - $lastregop + 1, $rest[$ind];
 }
 
 print $out <<EOP;
@@ -125,12 +173,12 @@ EXTCONST U8 PL_regkind[] = {
 EOP
 
 $ind = 0;
-while (++$ind <= $tot) {
+do {
   printf $out "\t%*s\t/* %*s */\n",
              -1-$twidth, "$type[$ind],", -$width, $name[$ind];
   print $out "\t/* ------------ States ------------- */\n"
-    if $ind == $lastregop and $lastregop != $tot;
-}
+    if $ind + 1 == $lastregop and $lastregop != $tot;
+} while (++$ind < $tot);
 
 print $out <<EOP;
 };
@@ -143,13 +191,13 @@ static const U8 regarglen[] = {
 EOP
 
 $ind = 0;
-while (++$ind <= $lastregop) {
+do {
   my $size = 0;
   $size = "EXTRA_SIZE(struct regnode_$args[$ind])" if $args[$ind];
   
   printf $out "\t%*s\t/* %*s */\n",
 	-37, "$size,",-$rwidth,$name[$ind];
-}
+} while (++$ind < $lastregop);
 
 print $out <<EOP;
 };
@@ -160,12 +208,12 @@ static const char reg_off_by_arg[] = {
 EOP
 
 $ind = 0;
-while (++$ind <= $lastregop) {
+do {
   my $size = $longj[$ind] || 0;
 
   printf $out "\t%d,\t/* %*s */\n",
 	$size, -$rwidth, $name[$ind]
-}
+} while (++$ind < $lastregop);
 
 print $out <<EOP;
 };
@@ -181,20 +229,20 @@ EXTCONST char * const PL_reg_name[] = {
 EOP
 
 $ind = 0;
-my $ofs = 1;
+my $ofs = 0;
 my $sym = "";
-while (++$ind <= $tot) {
+do {
   my $size = $longj[$ind] || 0;
 
   printf $out "\t%*s\t/* $sym%#04x */\n",
 	-3-$width,qq("$name[$ind]",), $ind - $ofs;
-  if ($ind == $lastregop and $lastregop != $tot) {
+  if ($ind + 1 == $lastregop and $lastregop != $tot) {
     print $out "\t/* ------------ States ------------- */\n";
-    $ofs = $lastregop;
+    $ofs = $lastregop - 1;
     $sym = 'REGNODE_MAX +';
   }
     
-}
+} while (++$ind < $tot);
 
 print $out <<EOP;
 };
@@ -236,6 +284,18 @@ print $out <<EOP;
 };
 #endif /* DOINIT */
 
+EOP
+
+print $out process_flags('V', 'varies', <<'EOC');
+/* The following have no fixed length. U8 so we can do strchr() on it. */
+EOC
+
+print $out process_flags('S', 'simple', <<'EOC');
+/* The following always have a length of 1. U8 we can do strchr() on it. */
+/* (Note that length 1 means "one character" under UTF8, not "one octet".) */
+EOC
+
+print $out <<EOP;
 /* ex: set ro: */
 EOP
 safer_close($out);

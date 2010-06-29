@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 BEGIN {
-    push @INC, 't/lib';
+  push @INC, 't/lib';
 }
 
 use strict;
@@ -3160,8 +3160,7 @@ for my $hide_fork ( 0 .. $can_open3 ) {
         # Test::Builder::failure_output() method to be overridden when
         # TAP::Parser is not installed.  Otherwise, these tests will fail.
 
-        unshift @{ $args->{switches} },
-          $ENV{PERL_CORE} ? ( map {"-I$_"} @INC ) : ('-It/lib');
+        unshift @{ $args->{switches} }, '-It/lib';
 
         $args->{source} = File::Spec->catfile( $SAMPLE_TESTS, $test );
         $args->{merge} = !$hide_fork;

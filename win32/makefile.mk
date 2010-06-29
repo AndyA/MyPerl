@@ -39,7 +39,7 @@ INST_TOP	*= $(INST_DRV)\perl
 # versioned installation can be obtained by setting INST_TOP above to a
 # path that includes an arbitrary version string.
 #
-#INST_VER	*= \5.13.0
+#INST_VER	*= \5.13.2
 
 #
 # Comment this out if you DON'T want your perl installation to have
@@ -221,8 +221,6 @@ CCHOME		*= C:\MinGW
 .ELSE
 CCHOME		*= $(MSVCDIR)
 .ENDIF
-CCINCDIR	*= $(CCHOME)\include
-CCLIBDIR	*= $(CCHOME)\lib
 
 #
 # If building with gcc-4.x.x (or x86_64-w64-mingw32-gcc-4.x.x), then
@@ -246,6 +244,18 @@ CCLIBDIR	*= $(CCHOME)\lib
 # instead of the usual 'gcc'.
 #
 #GCCCROSS	*= define
+
+#
+# Following sets $Config{incpath} and $Config{libpth}
+#
+
+.IF "$(GCCCROSS)" == "define"
+CCINCDIR *= $(CCHOME)\mingw\include
+CCLIBDIR *= $(CCHOME)\mingw\lib
+.ELSE
+CCINCDIR *= $(CCHOME)\include
+CCLIBDIR *= $(CCHOME)\lib
+.ENDIF
 
 #
 # Additional compiler flags can be specified here.
@@ -838,8 +848,8 @@ CFGH_TMPL	= config_H.gc64nox
 CFGSH_TMPL	= config.gc
 CFGH_TMPL	= config_H.gc
 .ENDIF
-PERLIMPLIB	= ..\libperl511$(a)
-PERLSTATICLIB	= ..\libperl511s$(a)
+PERLIMPLIB	= ..\libperl513$(a)
+PERLSTATICLIB	= ..\libperl513s$(a)
 
 .ELSE
 
@@ -1493,7 +1503,7 @@ utils: $(PERLEXE) $(X2P)
 	copy ..\README.vmesa    ..\pod\perlvmesa.pod
 	copy ..\README.vos      ..\pod\perlvos.pod
 	copy ..\README.win32    ..\pod\perlwin32.pod
-	copy ..\pod\perl5130delta.pod ..\pod\perldelta.pod
+	copy ..\pod\perl5133delta.pod ..\pod\perldelta.pod
 	cd ..\pod && $(MAKE) -f ..\win32\pod.mak converters
 	$(PERLEXE) $(PL2BAT) $(UTILS)
 	$(PERLEXE) $(ICWD) ..\autodoc.pl ..

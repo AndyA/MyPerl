@@ -663,19 +663,19 @@ PerlStdIOGetPtr(struct IPerlStdIO* piPerl, FILE* pf)
 }
 
 char*
-PerlStdIOGets(struct IPerlStdIO* piPerl, FILE* pf, char* s, int n)
+PerlStdIOGets(struct IPerlStdIO* piPerl, char* s, int n, FILE* pf)
 {
     return win32_fgets(s, n, pf);
 }
 
 int
-PerlStdIOPutc(struct IPerlStdIO* piPerl, FILE* pf, int c)
+PerlStdIOPutc(struct IPerlStdIO* piPerl, int c, FILE* pf)
 {
     return win32_fputc(c, pf);
 }
 
 int
-PerlStdIOPuts(struct IPerlStdIO* piPerl, FILE* pf, const char *s)
+PerlStdIOPuts(struct IPerlStdIO* piPerl, const char *s, FILE* pf)
 {
     return win32_fputs(s, pf);
 }

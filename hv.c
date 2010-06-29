@@ -179,7 +179,7 @@ Perl_he_dup(pTHX_ const HE *e, bool shared, CLONE_PARAMS* param)
 	char *k;
 	Newx(k, HEK_BASESIZE + sizeof(const SV *), char);
 	HeKEY_hek(ret) = (HEK*)k;
-	HeKEY_sv(ret) = SvREFCNT_inc(sv_dup(HeKEY_sv(e), param));
+	HeKEY_sv(ret) = sv_dup_inc(HeKEY_sv(e), param);
     }
     else if (shared) {
 	/* This is hek_dup inlined, which seems to be important for speed
@@ -202,7 +202,7 @@ Perl_he_dup(pTHX_ const HE *e, bool shared, CLONE_PARAMS* param)
     else
 	HeKEY_hek(ret) = save_hek_flags(HeKEY(e), HeKLEN(e), HeHASH(e),
                                         HeKFLAGS(e));
-    HeVAL(ret) = SvREFCNT_inc(sv_dup(HeVAL(e), param));
+    HeVAL(ret) = sv_dup_inc(HeVAL(e), param);
     return ret;
 }
 #endif	/* USE_ITHREADS */
@@ -817,8 +817,7 @@ Perl_hv_common(pTHX_ HV *hv, SV *keysv, const char *key, STRLEN klen,
 
 	xhv->xhv_keys++; /* HvTOTALKEYS(hv)++ */
 	if (!counter) {				/* initial entry? */
-	    xhv->xhv_fill++; /* HvFILL(hv)++ */
-	} else if (xhv->xhv_keys > (IV)xhv->xhv_max) {
+	} else if (xhv->xhv_keys > xhv->xhv_max) {
 	    hsplit(hv);
 	} else if(!HvREHASH(hv)) {
 	    U32 n_links = 1;
@@ -887,7 +886,7 @@ Perl_hv_scalar(pTHX_ HV *hv)
     }
 
     sv = sv_newmortal();
-    if (HvFILL((const HV *)hv)) 
+    if (HvTOTALKEYS((const HV *)hv)) 
         Perl_sv_setpvf(aTHX_ sv, "%ld/%ld",
                 (long)HvFILL(hv), (long)HvMAX(hv) + 1);
     else
@@ -1055,9 +1054,6 @@ S_hv_delete_common(pTHX_ HV *hv, SV *keysv, const char *key, STRLEN klen,
 	    HvPLACEHOLDERS(hv)++;
 	} else {
 	    *oentry = HeNEXT(entry);
-	    if(!*first_entry) {
-		xhv->xhv_fill--; /* HvFILL(hv)-- */
-	    }
 	    if (SvOOK(hv) && entry == HvAUX(hv)->xhv_eiter /* HvEITER(hv) */)
 		HvLAZYDEL_on(hv);
 	    else
@@ -1089,7 +1085,6 @@ S_hsplit(pTHX_ HV *hv)
     register I32 i;
     char *a = (char*) HvARRAY(hv);
     register HE **aep;
-    register HE **oentry;
     int longest_chain = 0;
     int was_shared;
 
@@ -1146,29 +1141,26 @@ S_hsplit(pTHX_ HV *hv)
     for (i=0; i<oldsize; i++,aep++) {
 	int left_length = 0;
 	int right_length = 0;
-	register HE *entry;
+	HE **oentry = aep;
+	HE *entry = *aep;
 	register HE **bep;
 
-	if (!*aep)				/* non-existent */
+	if (!entry)				/* non-existent */
 	    continue;
 	bep = aep+oldsize;
-	for (oentry = aep, entry = *aep; entry; entry = *oentry) {
+	do {
 	    if ((HeHASH(entry) & newsize) != (U32)i) {
 		*oentry = HeNEXT(entry);
 		HeNEXT(entry) = *bep;
-		if (!*bep)
-		    xhv->xhv_fill++; /* HvFILL(hv)++ */
 		*bep = entry;
 		right_length++;
-		continue;
 	    }
 	    else {
 		oentry = &HeNEXT(entry);
 		left_length++;
 	    }
-	}
-	if (!*aep)				/* everything moved */
-	    xhv->xhv_fill--; /* HvFILL(hv)-- */
+	    entry = *oentry;
+	} while (entry);
 	/* I think we don't actually need to keep track of the longest length,
 	   merely flag if anything is too long. But for the moment while
 	   developing this code I'll track it.  */
@@ -1204,7 +1196,6 @@ S_hsplit(pTHX_ HV *hv)
 
     was_shared = HvSHAREKEYS(hv);
 
-    xhv->xhv_fill = 0;
     HvSHAREKEYS_off(hv);
     HvREHASH_on(hv);
 
@@ -1239,8 +1230,6 @@ S_hsplit(pTHX_ HV *hv)
 
 	    /* Copy oentry to the correct new chain.  */
 	    bep = ((HE**)a) + (hash & (I32) xhv->xhv_max);
-	    if (!*bep)
-		    xhv->xhv_fill++; /* HvFILL(hv)++ */
 	    HeNEXT(entry) = *bep;
 	    *bep = entry;
 
@@ -1261,8 +1250,6 @@ Perl_hv_ksplit(pTHX_ HV *hv, IV newmax)
     register I32 i;
     register char *a;
     register HE **aep;
-    register HE *entry;
-    register HE **oentry;
 
     PERL_ARGS_ASSERT_HV_KSPLIT;
 
@@ -1317,29 +1304,29 @@ Perl_hv_ksplit(pTHX_ HV *hv, IV newmax)
     }
     xhv->xhv_max = --newsize; 	/* HvMAX(hv) = --newsize */
     HvARRAY(hv) = (HE **) a;
-    if (!xhv->xhv_fill /* !HvFILL(hv) */)	/* skip rest if no entries */
+    if (!xhv->xhv_keys /* !HvTOTALKEYS(hv) */)	/* skip rest if no entries */
 	return;
 
     aep = (HE**)a;
     for (i=0; i<oldsize; i++,aep++) {
-	if (!*aep)				/* non-existent */
+	HE **oentry = aep;
+	HE *entry = *aep;
+
+	if (!entry)				/* non-existent */
 	    continue;
-	for (oentry = aep, entry = *aep; entry; entry = *oentry) {
+	do {
 	    register I32 j = (HeHASH(entry) & newsize);
 
 	    if (j != i) {
 		j -= i;
 		*oentry = HeNEXT(entry);
-		if (!(HeNEXT(entry) = aep[j]))
-		    xhv->xhv_fill++; /* HvFILL(hv)++ */
+		HeNEXT(entry) = aep[j];
 		aep[j] = entry;
-		continue;
 	    }
 	    else
 		oentry = &HeNEXT(entry);
-	}
-	if (!*aep)				/* everything moved */
-	    xhv->xhv_fill--; /* HvFILL(hv)-- */
+	    entry = *oentry;
+	} while (entry);
     }
 }
 
@@ -1348,9 +1335,9 @@ Perl_newHVhv(pTHX_ HV *ohv)
 {
     dVAR;
     HV * const hv = newHV();
-    STRLEN hv_max, hv_fill;
+    STRLEN hv_max;
 
-    if (!ohv || (hv_fill = HvFILL(ohv)) == 0)
+    if (!ohv || !HvTOTALKEYS(ohv))
 	return hv;
     hv_max = HvMAX(ohv);
 
@@ -1396,7 +1383,6 @@ Perl_newHVhv(pTHX_ HV *ohv)
 	}
 
 	HvMAX(hv)   = hv_max;
-	HvFILL(hv)  = hv_fill;
 	HvTOTALKEYS(hv)  = HvTOTALKEYS(ohv);
 	HvARRAY(hv) = ents;
     } /* not magical */
@@ -1405,6 +1391,7 @@ Perl_newHVhv(pTHX_ HV *ohv)
 	HE *entry;
 	const I32 riter = HvRITER_get(ohv);
 	HE * const eiter = HvEITER_get(ohv);
+	STRLEN hv_fill = HvFILL(ohv);
 
 	/* Can we use fewer buckets? (hv_max is always 2^n-1) */
 	while (hv_max && hv_max + 1 >= hv_fill * 2)
@@ -1431,10 +1418,10 @@ HV *
 Perl_hv_copy_hints_hv(pTHX_ HV *const ohv)
 {
     HV * const hv = newHV();
-    STRLEN hv_fill;
 
-    if (ohv && (hv_fill = HvFILL(ohv))) {
+    if (ohv && HvTOTALKEYS(ohv)) {
 	STRLEN hv_max = HvMAX(ohv);
+	STRLEN hv_fill = HvFILL(ohv);
 	HE *entry;
 	const I32 riter = HvRITER_get(ohv);
 	HE * const eiter = HvEITER_get(ohv);
@@ -1638,8 +1625,6 @@ S_clear_placeholders(pTHX_ HV *hv, U32 items)
 	while ((entry = *oentry)) {
 	    if (HeVAL(entry) == &PL_sv_placeholder) {
 		*oentry = HeNEXT(entry);
-		if (first && !*oentry)
-		    HvFILL(hv)--; /* This linked list is now empty.  */
 		if (entry == HvEITER_get(hv))
 		    HvLAZYDEL_on(hv);
 		else
@@ -1782,7 +1767,6 @@ S_hfreeentries(pTHX_ HV *hv)
 	/* make everyone else think the array is empty, so that the destructors
 	 * called for freed entries can't recusively mess with us */
 	HvARRAY(hv) = NULL;
-	HvFILL(hv) = 0;
 	((XPVHV*) SvANY(hv))->xhv_keys = 0;
 
 
@@ -1874,6 +1858,38 @@ Perl_hv_undef(pTHX_ HV *hv)
 
     if (SvRMAGICAL(hv))
 	mg_clear(MUTABLE_SV(hv));
+}
+
+/*
+=for apidoc hv_fill
+
+Returns the number of hash buckets that happen to be in use. This function is
+wrapped by the macro C<HvFILL>.
+
+Previously this value was stored in the HV structure, rather than being
+calculated on demand.
+
+=cut
+*/
+
+STRLEN
+Perl_hv_fill(pTHX_ HV const *const hv)
+{
+    STRLEN count = 0;
+    HE **ents = HvARRAY(hv);
+
+    PERL_ARGS_ASSERT_HV_FILL;
+
+    if (ents) {
+	HE *const *const last = ents + HvMAX(hv);
+	count = last + 1 - ents;
+
+	do {
+	    if (!*ents)
+		--count;
+	} while (++ents <= last);
+    }
+    return count;
 }
 
 static struct xpvhv_aux*
@@ -2427,10 +2443,6 @@ S_unshare_hek_or_pvn(pTHX_ const HEK *hek, const char *str, I32 len, U32 hash)
     if (entry) {
         if (--entry->he_valu.hent_refcount == 0) {
             *oentry = HeNEXT(entry);
-            if (!*first) {
-		/* There are now no entries in our slot.  */
-                xhv->xhv_fill--; /* HvFILL(hv)-- */
-	    }
             Safefree(entry);
             xhv->xhv_keys--; /* HvTOTALKEYS(hv)-- */
         }
@@ -2550,8 +2562,7 @@ S_share_hek_flags(pTHX_ const char *str, I32 len, register U32 hash, int flags)
 
 	xhv->xhv_keys++; /* HvTOTALKEYS(hv)++ */
 	if (!next) {			/* initial entry? */
-	    xhv->xhv_fill++; /* HvFILL(hv)++ */
-	} else if (xhv->xhv_keys > (IV)xhv->xhv_max /* HvKEYS(hv) > HvMAX(hv) */) {
+	} else if (xhv->xhv_keys > xhv->xhv_max /* HvKEYS(hv) > HvMAX(hv) */) {
 		hsplit(PL_strtab);
 	}
     }
@@ -2732,10 +2743,6 @@ Perl_refcounted_he_chain_2hv(pTHX_ const struct refcounted_he *chain)
 
 	/* Link it into the chain.  */
 	HeNEXT(entry) = *oentry;
-	if (!HeNEXT(entry)) {
-	    /* initial entry.   */
-	    HvFILL(hv)++;
-	}
 	*oentry = entry;
 
 	HvTOTALKEYS(hv)++;

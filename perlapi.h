@@ -544,6 +544,8 @@ END_EXTERN_C
 #define PL_rehash_seed_set	(*Perl_Irehash_seed_set_ptr(aTHX))
 #undef  PL_replgv
 #define PL_replgv		(*Perl_Ireplgv_ptr(aTHX))
+#undef  PL_restartjmpenv
+#define PL_restartjmpenv	(*Perl_Irestartjmpenv_ptr(aTHX))
 #undef  PL_restartop
 #define PL_restartop		(*Perl_Irestartop_ptr(aTHX))
 #undef  PL_rs
@@ -580,6 +582,8 @@ END_EXTERN_C
 #define PL_sig_pending		(*Perl_Isig_pending_ptr(aTHX))
 #undef  PL_sighandlerp
 #define PL_sighandlerp		(*Perl_Isighandlerp_ptr(aTHX))
+#undef  PL_signalhook
+#define PL_signalhook		(*Perl_Isignalhook_ptr(aTHX))
 #undef  PL_signals
 #define PL_signals		(*Perl_Isignals_ptr(aTHX))
 #undef  PL_slab_count

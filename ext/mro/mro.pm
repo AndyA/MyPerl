@@ -12,7 +12,7 @@ use warnings;
 
 # mro.pm versions < 1.00 reserved for MRO::Compat
 #  for partial back-compat to 5.[68].x
-our $VERSION = '1.02';
+our $VERSION = '1.03';
 
 sub import {
     mro::set_mro(scalar(caller), $_[1]) if $_[1];
@@ -94,7 +94,7 @@ as well.
 
 =head2 How does C3 work
 
-C3 works by always preserving local precendence ordering. This essentially
+C3 works by always preserving local precedence ordering. This essentially
 means that no class will appear before any of its subclasses. Take, for
 instance, the classic diamond inheritance pattern:
 

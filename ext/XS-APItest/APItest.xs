@@ -3,6 +3,8 @@
 #include "perl.h"
 #include "XSUB.h"
 
+typedef SV *SVREF;
+typedef PTR_TBL_t *XS__APItest__PtrTable;
 
 /* for my_cxt tests */
 
@@ -547,6 +549,45 @@ sub CLEAR    { %{$_[0]} = () }
 
 =cut
 
+MODULE = XS::APItest::PtrTable	PACKAGE = XS::APItest::PtrTable PREFIX = ptr_table_
+
+void
+ptr_table_new(classname)
+const char * classname
+    PPCODE:
+    PUSHs(sv_setref_pv(sv_newmortal(), classname, (void*)ptr_table_new()));
+
+void
+DESTROY(table)
+XS::APItest::PtrTable table
+    CODE:
+    ptr_table_free(table);
+
+void
+ptr_table_store(table, from, to)
+XS::APItest::PtrTable table
+SVREF from
+SVREF to
+   CODE:
+   ptr_table_store(table, from, to);
+
+UV
+ptr_table_fetch(table, from)
+XS::APItest::PtrTable table
+SVREF from
+   CODE:
+   RETVAL = PTR2UV(ptr_table_fetch(table, from));
+   OUTPUT:
+   RETVAL
+
+void
+ptr_table_split(table)
+XS::APItest::PtrTable table
+
+void
+ptr_table_clear(table)
+XS::APItest::PtrTable table
+
 MODULE = XS::APItest		PACKAGE = XS::APItest
 
 PROTOTYPES: DISABLE
@@ -921,16 +962,6 @@ utf16_to_utf8 (sv, ...)
 	SvPOK_on(dest);
  	ST(0) = dest;
 	XSRETURN(1);
-
-U32
-pmflag (flag, before = 0)
-	int flag
-	U32 before
-   CODE:
-	pmflag(&before, flag);
-	RETVAL = before;
-    OUTPUT:
-	RETVAL
 
 void
 my_exit(int exitcode)

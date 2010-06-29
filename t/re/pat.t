@@ -23,7 +23,7 @@ BEGIN {
 }
 
 
-plan tests => 297;  # Update this when adding/deleting tests.
+plan tests => 350;  # Update this when adding/deleting tests.
 
 run_tests() unless caller;
 
@@ -987,6 +987,22 @@ sub run_tests {
         ok "abbbbc" =~ m/\N{3,4}/ && $& eq "abbb", '"abbbbc" =~ m/\N{3,4}/ && $& eq "abbb"';
     }
 
+    {
+        use charnames ":full";
+        local $Message = '[perl #74982] Period coming after \N{}';
+        ok "\x{ff08}." =~ m/\N{FULLWIDTH LEFT PARENTHESIS}./ && $& eq "\x{ff08}.";
+        ok "\x{ff08}." =~ m/[\N{FULLWIDTH LEFT PARENTHESIS}]./ && $& eq "\x{ff08}.";
+    }
+    {
+        my $n= 50;
+        # this must be a high number and go from 0 to N, as the bug we are looking for doesnt
+        # seem to be predictable. Slight changes to the test make it fail earlier or later.
+        foreach my $i (0 .. $n)
+        {
+            my $str= "\n" x $i;
+            ok $str=~/.*\z/, "implict MBOL check string disable does not break things length=$i";
+        }
+    }
 
 } # End of sub run_tests
 

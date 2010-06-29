@@ -447,37 +447,6 @@ START_EXTERN_C
 #include "regnodes.h"
 #endif
 
-/* The following have no fixed length. U8 so we can do strchr() on it. */
-#ifndef DOINIT
-EXTCONST U8 PL_varies[];
-#else
-EXTCONST U8 PL_varies[] = {
-    BRANCH, BACK, STAR, PLUS, CURLY, CURLYX, REF, REFF, REFFL,
-    WHILEM, CURLYM, CURLYN, BRANCHJ, IFTHEN, SUSPEND, CLUMP,
-    NREF, NREFF, NREFFL,
-    0
-};
-#endif
-
-/* The following always have a length of 1. U8 we can do strchr() on it. */
-/* (Note that length 1 means "one character" under UTF8, not "one octet".) */
-#ifndef DOINIT
-EXTCONST U8 PL_simple[];
-#else
-EXTCONST U8 PL_simple[] = {
-    REG_ANY,	SANY,	CANY,
-    ANYOF,
-    ALNUM,	ALNUML,
-    NALNUM,	NALNUML,
-    SPACE,	SPACEL,
-    NSPACE,	NSPACEL,
-    DIGIT,	NDIGIT,
-    VERTWS,     NVERTWS,
-    HORIZWS,    NHORIZWS,
-    0
-};
-#endif
-
 #ifndef PLUGGABLE_RE_EXTENSION
 #ifndef DOINIT
 EXTCONST regexp_engine PL_core_reg_engine;
@@ -507,6 +476,7 @@ END_EXTERN_C
 
 /* .what is a character array with one character for each member of .data
  * The character describes the function of the corresponding .data item:
+ *   a - AV for paren_name_list under DEBUGGING
  *   f - start-class data for regstclass optimization
  *   n - Root of op tree for (?{EVAL}) item
  *   o - Start op for (?{EVAL}) item
@@ -586,6 +556,15 @@ struct _reg_trie_state {
   } trans;
 };
 
+/* info per word; indexed by wordnum */
+typedef struct {
+    U16  prev;	/* previous word in acceptance chain; eg in
+		 * zzz|abc|ab/ after matching the chars abc, the
+		 * accepted word is #2, and the previous accepted
+		 * word is #3 */
+    U32 len;	/* how many chars long is this word? */
+    U32 accept;	/* accept state for this word */
+} reg_trie_wordinfo;
 
 
 typedef struct _reg_trie_state    reg_trie_state;
@@ -603,15 +582,14 @@ struct _reg_trie_data {
     reg_trie_state  *states;         /* state data */
     reg_trie_trans  *trans;          /* array of transition elements */
     char            *bitmap;         /* stclass bitmap */
-    U32             *wordlen;        /* array of lengths of words */
     U16 	    *jump;           /* optional 1 indexed array of offsets before tail 
                                         for the node following a given word. */
-    U16	            *nextword;       /* optional 1 indexed array to support linked list
-                                        of duplicate wordnums */
+    reg_trie_wordinfo *wordinfo;     /* array of info per word */
     U16             uniquecharcount; /* unique chars in trie (width of trans table) */
     U32             startstate;      /* initial state - used for common prefix optimisation */
     STRLEN          minlen;          /* minimum length of words in trie - build/opt only? */
     STRLEN          maxlen;          /* maximum length of words in trie - build/opt only? */
+    U32             prefixlen;       /* #chars in common prefix */
     U32             statecount;      /* Build only - number of states in the states array 
                                         (including the unused zero state) */
     U32             wordcount;       /* Build only */

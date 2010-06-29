@@ -71,7 +71,7 @@ typedef struct _ithread {
     int state;                  /* Detached, joined, finished, etc. */
     int gimme;                  /* Context of create */
     SV *init_function;          /* Code to run */
-    SV *params;                 /* Args to pass function */
+    AV *params;                 /* Args to pass function */
 #ifdef WIN32
     DWORD  thr;                 /* OS's idea if thread id */
     HANDLE handle;              /* OS's waitable handle */
@@ -215,7 +215,7 @@ S_ithread_clear(pTHX_ ithread *thread)
         S_ithread_set(aTHX_ thread);
 
         SvREFCNT_dec(thread->params);
-        thread->params = Nullsv;
+        thread->params = NULL;
 
         if (thread->err) {
             SvREFCNT_dec(thread->err);
@@ -487,7 +487,7 @@ S_ithread_run(void * arg)
     PL_perl_destruct_level = 2;
 
     {
-        AV *params = (AV *)SvRV(thread->params);
+        AV *params = thread->params;
         int len = (int)av_len(params)+1;
         int ii;
 
@@ -675,10 +675,13 @@ S_ithread_create(
         IV        stack_size,
         int       gimme,
         int       exit_opt,
-        SV       *params)
+        SV      **params_start,
+        SV      **params_end)
 {
     ithread     *thread;
     ithread     *current_thread = S_ithread_get(aTHX);
+    AV          *params;
+    SV          **array;
 
 #if PERL_VERSION <= 8 && PERL_SUBVERSION <= 7
     SV         **tmps_tmp = PL_tmps_stack;
@@ -771,7 +774,7 @@ S_ithread_create(
      * context for the duration of our work for new interpreter.
      */
     {
-        CLONE_PARAMS clone_param;
+        CLONE_PARAMS *clone_param = Perl_clone_params_new(aTHX, thread->interp);
 
         dTHXa(thread->interp);
 
@@ -781,19 +784,23 @@ S_ithread_create(
          * they are created
          */
         SvREFCNT_dec(PL_endav);
-        PL_endav = newAV();
+        PL_endav = NULL;
 
-        clone_param.flags = 0;
         if (SvPOK(init_function)) {
             thread->init_function = newSV(0);
             sv_copypv(thread->init_function, init_function);
         } else {
-            thread->init_function =
-                SvREFCNT_inc(sv_dup(init_function, &clone_param));
+            thread->init_function = sv_dup_inc(init_function, clone_param);
         }
 
-        thread->params = sv_dup(params, &clone_param);
-        SvREFCNT_inc_void(thread->params);
+        thread->params = params = newAV();
+        av_extend(params, params_end - params_start - 1);
+        AvFILLp(params) = params_end - params_start - 1;
+        array = AvARRAY(params);
+        while (params_start < params_end) {
+            *array++ = SvREFCNT_inc(sv_dup(*params_start++, clone_param));
+        }
+	Perl_clone_params_del(clone_param);	
 
 #if PERL_VERSION <= 8 && PERL_SUBVERSION <= 7
         /* The code below checks that anything living on the tmps stack and
@@ -908,7 +915,6 @@ S_ithread_create(
 #endif
         /* Must unlock mutex for destruct call */
         MUTEX_UNLOCK(&MY_POOL.create_destruct_mutex);
-        sv_2mortal(params);
         thread->state |= PERL_ITHR_NONVIABLE;
         S_ithread_free(aTHX_ thread);   /* Releases MUTEX */
 #ifndef WIN32
@@ -924,7 +930,6 @@ S_ithread_create(
     }
 
     MY_POOL.running_threads++;
-    sv_2mortal(params);
     return (thread);
 }
 
@@ -942,7 +947,6 @@ ithread_create(...)
         char *classname;
         ithread *thread;
         SV *function_to_call;
-        AV *params;
         HV *specs;
         IV stack_size;
         int context;
@@ -950,7 +954,8 @@ ithread_create(...)
         SV *thread_exit_only;
         char *str;
         int idx;
-        int ii;
+        SV **args_start;
+        SV **args_end;
         dMY_POOL;
     CODE:
         if ((items >= 2) && SvROK(ST(1)) && SvTYPE(SvRV(ST(1)))==SVt_PVHV) {
@@ -988,18 +993,19 @@ ithread_create(...)
 
         context = -1;
         if (specs) {
+            SV **svp;
             /* stack_size */
-            if (hv_exists(specs, "stack", 5)) {
-                stack_size = SvIV(*hv_fetch(specs, "stack", 5, 0));
-            } else if (hv_exists(specs, "stacksize", 9)) {
-                stack_size = SvIV(*hv_fetch(specs, "stacksize", 9, 0));
-            } else if (hv_exists(specs, "stack_size", 10)) {
-                stack_size = SvIV(*hv_fetch(specs, "stack_size", 10, 0));
+            if ((svp = hv_fetch(specs, "stack", 5, 0))) {
+                stack_size = SvIV(*svp);
+            } else if ((svp = hv_fetch(specs, "stacksize", 9, 0))) {
+                stack_size = SvIV(*svp);
+            } else if ((svp = hv_fetch(specs, "stack_size", 10, 0))) {
+                stack_size = SvIV(*svp);
             }
 
             /* context */
-            if (hv_exists(specs, "context", 7)) {
-                str = (char *)SvPV_nolen(*hv_fetch(specs, "context", 7, 0));
+            if ((svp = hv_fetch(specs, "context", 7, 0))) {
+                str = (char *)SvPV_nolen(*svp);
                 switch (*str) {
                     case 'a':
                     case 'A':
@@ -1018,27 +1024,27 @@ ithread_create(...)
                     default:
                         Perl_croak(aTHX_ "Invalid context: %s", str);
                 }
-            } else if (hv_exists(specs, "array", 5)) {
-                if (SvTRUE(*hv_fetch(specs, "array", 5, 0))) {
+            } else if ((svp = hv_fetch(specs, "array", 5, 0))) {
+                if (SvTRUE(*svp)) {
                     context = G_ARRAY;
                 }
-            } else if (hv_exists(specs, "list", 4)) {
-                if (SvTRUE(*hv_fetch(specs, "list", 4, 0))) {
+            } else if ((svp = hv_fetch(specs, "list", 4, 0))) {
+                if (SvTRUE(*svp)) {
                     context = G_ARRAY;
                 }
-            } else if (hv_exists(specs, "scalar", 6)) {
-                if (SvTRUE(*hv_fetch(specs, "scalar", 6, 0))) {
+            } else if ((svp = hv_fetch(specs, "scalar", 6, 0))) {
+                if (SvTRUE(*svp)) {
                     context = G_SCALAR;
                 }
-            } else if (hv_exists(specs, "void", 4)) {
-                if (SvTRUE(*hv_fetch(specs, "void", 4, 0))) {
+            } else if ((svp = hv_fetch(specs, "void", 4, 0))) {
+                if (SvTRUE(*svp)) {
                     context = G_VOID;
                 }
             }
 
             /* exit => thread_only */
-            if (hv_exists(specs, "exit", 4)) {
-                str = (char *)SvPV_nolen(*hv_fetch(specs, "exit", 4, 0));
+            if ((svp = hv_fetch(specs, "exit", 4, 0))) {
+                str = (char *)SvPV_nolen(*svp);
                 exit_opt = (*str == 't' || *str == 'T')
                                     ? PERL_ITHR_THREAD_EXIT_ONLY : 0;
             }
@@ -1050,11 +1056,11 @@ ithread_create(...)
         }
 
         /* Function args */
-        params = newAV();
+        args_start = &ST(idx + 2);
         if (items > 2) {
-            for (ii=2; ii < items ; ii++) {
-                av_push(params, SvREFCNT_inc(ST(idx+ii)));
-            }
+            args_end = &ST(idx + items);
+        } else {
+            args_end = args_start;
         }
 
         /* Create thread */
@@ -1063,7 +1069,8 @@ ithread_create(...)
                                         stack_size,
                                         context,
                                         exit_opt,
-                                        newRV_noinc((SV*)params));
+                                        args_start,
+                                        args_end);
         if (! thread) {
             XSRETURN_UNDEF;     /* Mutex already unlocked */
         }
@@ -1233,22 +1240,20 @@ ithread_join(...)
         /* Objects do not survive this process - FIXME */
         if ((thread->gimme & G_WANT) != G_VOID) {
             AV *params_copy;
-            PerlInterpreter *other_perl;
-            CLONE_PARAMS clone_params;
+            PerlInterpreter *other_perl = thread->interp;
+            CLONE_PARAMS *clone_params = Perl_clone_params_new(other_perl, aTHX);
 
-            params_copy = (AV *)SvRV(thread->params);
-            other_perl = thread->interp;
-            clone_params.stashes = newAV();
-            clone_params.flags = CLONEf_JOIN_IN;
+            params_copy = thread->params;
+            clone_params->flags |= CLONEf_JOIN_IN;
             PL_ptr_table = ptr_table_new();
             S_ithread_set(aTHX_ thread);
             /* Ensure 'meaningful' addresses retain their meaning */
             ptr_table_store(PL_ptr_table, &other_perl->Isv_undef, &PL_sv_undef);
             ptr_table_store(PL_ptr_table, &other_perl->Isv_no, &PL_sv_no);
             ptr_table_store(PL_ptr_table, &other_perl->Isv_yes, &PL_sv_yes);
-            params = (AV *)sv_dup((SV*)params_copy, &clone_params);
+            params = (AV *)sv_dup((SV*)params_copy, clone_params);
             S_ithread_set(aTHX_ current_thread);
-            SvREFCNT_dec(clone_params.stashes);
+	    Perl_clone_params_del(clone_params);	
             SvREFCNT_inc_void(params);
             ptr_table_free(PL_ptr_table);
             PL_ptr_table = NULL;
@@ -1622,13 +1627,11 @@ ithread_error(...)
 
         /* If thread died, then clone the error into the calling thread */
         if (thread->state & PERL_ITHR_DIED) {
-            PerlInterpreter *other_perl;
-            CLONE_PARAMS clone_params;
+            PerlInterpreter *other_perl = thread->interp;
+            CLONE_PARAMS *clone_params = Perl_clone_params_new(other_perl, aTHX);
             ithread *current_thread;
 
-            other_perl = thread->interp;
-            clone_params.stashes = newAV();
-            clone_params.flags = CLONEf_JOIN_IN;
+            clone_params->flags |= CLONEf_JOIN_IN;
             PL_ptr_table = ptr_table_new();
             current_thread = S_ithread_get(aTHX);
             S_ithread_set(aTHX_ thread);
@@ -1636,9 +1639,9 @@ ithread_error(...)
             ptr_table_store(PL_ptr_table, &other_perl->Isv_undef, &PL_sv_undef);
             ptr_table_store(PL_ptr_table, &other_perl->Isv_no, &PL_sv_no);
             ptr_table_store(PL_ptr_table, &other_perl->Isv_yes, &PL_sv_yes);
-            err = sv_dup(thread->err, &clone_params);
+            err = sv_dup(thread->err, clone_params);
             S_ithread_set(aTHX_ current_thread);
-            SvREFCNT_dec(clone_params.stashes);
+	    Perl_clone_params_del(clone_params);
             SvREFCNT_inc_void(err);
             /* If error was an object, bless it into the correct class */
             if (thread->err_class) {

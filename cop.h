@@ -569,14 +569,14 @@ struct block {
 #define blk_givwhen	cx_u.cx_blk.blk_u.blku_givwhen
 
 #define DEBUG_CX(action)						\
-    DEBUG_l(WITH_THX(							\
+    DEBUG_l(								\
 	Perl_deb(aTHX_ "CX %ld %s %s (scope %ld,%ld) at %s:%d\n",	\
 		    (long)cxstack_ix,					\
 		    action,						\
 		    PL_block_type[CxTYPE(&cxstack[cxstack_ix])],	\
 		    (long)PL_scopestack_ix,				\
 		    (long)(cxstack[cxstack_ix].blk_oldscopesp),		\
-		    __FILE__, __LINE__)));
+		    __FILE__, __LINE__));
 
 /* Enter a block. */
 #define PUSHBLOCK(cx,t,sp) CXINC, cx = &cxstack[cxstack_ix],		\
@@ -592,7 +592,6 @@ struct block {
 /* Exit a block (RETURN and LAST). */
 #define POPBLOCK(cx,pm)							\
 	DEBUG_CX("POP");						\
-	PERL_ASYNC_CHECK();						\
 	cx = &cxstack[cxstack_ix--],					\
 	newsp		 = PL_stack_base + cx->blk_oldsp,		\
 	PL_curcop	 = cx->blk_oldcop,				\
@@ -779,11 +778,14 @@ L<perlcall>.
 				   hash actions codes defined in hv.h */
 #define G_EVAL		8	/* Assume eval {} around subroutine call. */
 #define G_NOARGS       16	/* Don't construct a @_ array. */
-#define G_KEEPERR      32	/* Append errors to $@, don't overwrite it */
+#define G_KEEPERR      32	/* Warn for errors, don't overwrite $@ */
 #define G_NODEBUG      64	/* Disable debugging at toplevel.  */
 #define G_METHOD      128       /* Calling method. */
 #define G_FAKINGEVAL  256	/* Faking an eval context for call_sv or
 				   fold_constants. */
+#define G_UNDEF_FILL  512	/* Fill the stack with &PL_sv_undef
+				   A special case for UNSHIFT in
+				   Perl_magic_methcall().  */
 
 /* flag bits for PL_in_eval */
 #define EVAL_NULL	0	/* not in an eval */

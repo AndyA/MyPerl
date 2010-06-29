@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 BEGIN {
-    unshift @INC, 't/lib';
+  unshift @INC, 't/lib';
 }
 
 use strict;
@@ -12,6 +12,9 @@ use App::Prove;
 my @SCHEDULE;
 
 BEGIN {
+    my $t_dir = File::Spec->catdir(
+        't'
+    );
 
     # to add a new test to proverun, just list the name of the file in
     # t/sample-tests and a name for the test.  The rest is handled
@@ -24,14 +27,15 @@ BEGIN {
             name => 'Passing TODO',
         },
     );
-    foreach my $test (@tests) {
+
+    # TODO: refactor this and add in a test for:
+    # prove --source 'File: {extensions: [.1]}' t/source_tests/source.1
+
+    for my $test (@tests) {
 
         # let's fully expand that filename
-        $test->{file} = File::Spec->catfile(
-            't',
-            'sample-tests',
-            $test->{file}
-        );
+        $test->{file}
+          = File::Spec->catfile( $t_dir, 'sample-tests', $test->{file} );
     }
     @SCHEDULE = (
         map {
@@ -52,7 +56,7 @@ BEGIN {
                     ]
                 ]
             }
-          } @tests
+          } @tests,
     );
 
     plan tests => @SCHEDULE * 3;

@@ -404,7 +404,7 @@ C<strncmp>).
 #endif
 
 #define memEQs(s1, l, s2) \
-	(sizeof(s2)-1 == l && memEQ(s1, (s2 ""), (sizeof(s2)-1)))
+	(sizeof(s2)-1 == l && memEQ(s1, ("" s2 ""), (sizeof(s2)-1)))
 #define memNEs(s1, l, s2) !memEQs(s1, l, s2)
 
 /*
@@ -463,6 +463,11 @@ Converts the specified character to lowercase.  Characters outside the
 US-ASCII (Basic Latin) range are viewed as not having any case.
 
 =cut
+
+NOTE:  Since some of these are macros, there is no check in those that the
+parameter is a char or U8.  This means that if called with a larger width
+parameter, casts can silently truncate and yield wrong results.
+
 */
 
 #define isALNUM(c)	(isALPHA(c) || isDIGIT(c) || (c) == '_')
@@ -504,8 +509,8 @@ US-ASCII (Basic Latin) range are viewed as not having any case.
 #   define isUPPER(c)	((c) >= 'A' && (c) <= 'Z')
 #   define isLOWER(c)	((c) >= 'a' && (c) <= 'z')
 #   define isALNUMC(c)	(isALPHA(c) || isDIGIT(c))
-#   define isASCII(c)	((c) <= 127)
-#   define isCNTRL(c)	((c) < ' ' || (c) == 127)
+#   define isASCII(c)	((U8) (c) <= 127)
+#   define isCNTRL(c)	((U8) (c) < ' ' || (c) == 127)
 #   define isGRAPH(c)	(isALNUM(c) || isPUNCT(c))
 #   define isPRINT(c)	(((c) >= 32 && (c) < 127))
 #   define isPUNCT(c)	(((c) >= 33 && (c) <= 47) || ((c) >= 58 && (c) <= 64)  || ((c) >= 91 && (c) <= 96) || ((c) >= 123 && (c) <= 126))
@@ -659,16 +664,9 @@ US-ASCII (Basic Latin) range are viewed as not having any case.
 #define isPSXSPC_LC_utf8(c)	(isSPACE_LC_utf8(c) ||(c) == '\f')
 #define isBLANK_LC_utf8(c)	isBLANK(c) /* could be wrong */
 
-#ifdef EBCDIC
-#  ifdef PERL_IMPLICIT_CONTEXT
-#    define toCTRL(c)     Perl_ebcdic_control(aTHX_ c)
-#  else
-#    define toCTRL        Perl_ebcdic_control
-#  endif
-#else
-  /* This conversion works both ways, strangely enough. */
-#  define toCTRL(c)    (toUPPER(c) ^ 64)
-#endif
+/* This conversion works both ways, strangely enough. On EBCDIC platforms,
+ * CTRL-@ is 0, CTRL-A is 1, etc, just like on ASCII */
+#  define toCTRL(c)    (toUPPER(NATIVE_TO_UNI(c)) ^ 64)
 
 /* Line numbers are unsigned, 32 bits. */
 typedef U32 line_t;
@@ -918,6 +916,7 @@ void Perl_mem_log_del_sv(const SV *sv, const char *filename, const int linenumbe
 #endif
 
 #define C_ARRAY_LENGTH(a)	(sizeof(a)/sizeof((a)[0]))
+#define C_ARRAY_END(a)		(a) + (sizeof(a)/sizeof((a)[0]))
 
 #ifdef NEED_VA_COPY
 # ifdef va_copy

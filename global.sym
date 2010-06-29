@@ -32,6 +32,8 @@ Perl_mfree
 Perl_get_context
 Perl_set_context
 Perl_regcurly
+Perl_try_amagic_bin
+Perl_try_amagic_un
 Perl_amagic_call
 Perl_Gv_AMupdate
 Perl_gv_handler
@@ -60,8 +62,10 @@ Perl_cast_i32
 Perl_cast_iv
 Perl_cast_uv
 Perl_my_chsize
+Perl_croak_sv
 Perl_croak
 Perl_vcroak
+Perl_croak_no_modify
 Perl_croak_xs_usage
 Perl_croak_nocontext
 Perl_die_nocontext
@@ -96,6 +100,7 @@ Perl_debop
 Perl_debstack
 Perl_debstackptrs
 Perl_delimcpy
+Perl_die_sv
 Perl_die
 Perl_dounwind
 Perl_do_aexec
@@ -163,6 +168,7 @@ Perl_hv_fetch
 Perl_hv_fetch_ent
 Perl_hv_common
 Perl_hv_common_key_len
+Perl_hv_fill
 Perl_hv_free_ent
 Perl_hv_iterinit
 Perl_hv_iterkey
@@ -180,9 +186,9 @@ Perl_hv_store
 Perl_hv_store_ent
 Perl_hv_store_flags
 Perl_hv_undef
-Perl_ibcmp
-Perl_ibcmp_locale
-Perl_ibcmp_utf8
+Perl_foldEQ
+Perl_foldEQ_locale
+Perl_foldEQ_utf8
 Perl_init_stacks
 Perl_init_tm
 Perl_instr
@@ -274,12 +280,14 @@ Perl_load_module
 Perl_vload_module
 Perl_looks_like_number
 Perl_grok_bin
+Perl_grok_bslash_c
 Perl_grok_hex
 Perl_grok_number
 Perl_grok_numeric_radix
 Perl_grok_oct
 Perl_markstack_grow
 Perl_mess
+Perl_mess_sv
 Perl_vmess
 Perl_qerror
 Perl_sortsv
@@ -389,6 +397,7 @@ Perl_ninstr
 Perl_op_free
 Perl_pad_findmy
 Perl_find_rundefsvoffset
+Perl_find_rundefsv
 Perl_pad_sv
 Perl_reentrant_size
 Perl_reentrant_init
@@ -419,7 +428,6 @@ Perl_set_numeric_standard
 Perl_require_pv
 Perl_pack_cat
 Perl_packlist
-Perl_pmflag
 Perl_pop_scope
 Perl_push_scope
 Perl_ref
@@ -516,7 +524,7 @@ Perl_sv_2io
 Perl_sv_2iv
 Perl_sv_2iv_flags
 Perl_sv_2mortal
-Perl_sv_2nv
+Perl_sv_2nv_flags
 Perl_sv_2pv
 Perl_sv_2pv_flags
 Perl_sv_2pvutf8
@@ -546,6 +554,7 @@ Perl_sv_collxfrm
 Perl_sv_compile_2op
 Perl_getcwd_sv
 Perl_sv_dec
+Perl_sv_dec_nomg
 Perl_sv_dump
 Perl_sv_derived_from
 Perl_sv_does
@@ -555,6 +564,7 @@ Perl_sv_free2
 Perl_sv_gets
 Perl_sv_grow
 Perl_sv_inc
+Perl_sv_inc_nomg
 Perl_sv_insert
 Perl_sv_insert_flags
 Perl_sv_isa
@@ -639,6 +649,7 @@ Perl_sv_uni_display
 Perl_vivify_defelem
 Perl_seed
 Perl_report_uninit
+Perl_warn_sv
 Perl_warn
 Perl_vwarn
 Perl_warner
@@ -717,6 +728,7 @@ Perl_dirp_dup
 Perl_gp_dup
 Perl_mg_dup
 Perl_sv_dup
+Perl_sv_dup_inc
 Perl_rvpv_dup
 Perl_parser_dup
 Perl_ptr_table_new
@@ -813,4 +825,6 @@ Perl_sys_init
 Perl_sys_init3
 Perl_sys_term
 Perl_fetch_cop_label
+Perl_clone_params_new
+Perl_clone_params_del
 # ex: set ro:

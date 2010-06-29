@@ -254,6 +254,7 @@
 #define PL_rehash_seed		(vTHX->Irehash_seed)
 #define PL_rehash_seed_set	(vTHX->Irehash_seed_set)
 #define PL_replgv		(vTHX->Ireplgv)
+#define PL_restartjmpenv	(vTHX->Irestartjmpenv)
 #define PL_restartop		(vTHX->Irestartop)
 #define PL_rs			(vTHX->Irs)
 #define PL_runops		(vTHX->Irunops)
@@ -272,6 +273,7 @@
 #define PL_sharehook		(vTHX->Isharehook)
 #define PL_sig_pending		(vTHX->Isig_pending)
 #define PL_sighandlerp		(vTHX->Isighandlerp)
+#define PL_signalhook		(vTHX->Isignalhook)
 #define PL_signals		(vTHX->Isignals)
 #define PL_slab_count		(vTHX->Islab_count)
 #define PL_slabs		(vTHX->Islabs)
@@ -581,6 +583,7 @@
 #define PL_Irehash_seed		PL_rehash_seed
 #define PL_Irehash_seed_set	PL_rehash_seed_set
 #define PL_Ireplgv		PL_replgv
+#define PL_Irestartjmpenv	PL_restartjmpenv
 #define PL_Irestartop		PL_restartop
 #define PL_Irs			PL_rs
 #define PL_Irunops		PL_runops
@@ -599,6 +602,7 @@
 #define PL_Isharehook		PL_sharehook
 #define PL_Isig_pending		PL_sig_pending
 #define PL_Isighandlerp		PL_sighandlerp
+#define PL_Isignalhook		PL_signalhook
 #define PL_Isignals		PL_signals
 #define PL_Islab_count		PL_slab_count
 #define PL_Islabs		PL_slabs

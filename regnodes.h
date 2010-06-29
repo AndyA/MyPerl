@@ -85,7 +85,7 @@
 #define	ENDLIKE               	73	/* 0x49 Used only for the type field of verbs */
 #define	OPFAIL                	74	/* 0x4a Same as (?!) */
 #define	ACCEPT                	75	/* 0x4b Accepts the current matched string. */
-#define	VERB                  	76	/* 0x4c    no-sv 1	Used only for the type field of verbs */
+#define	VERB                  	76	/* 0x4c Used only for the type field of verbs */
 #define	PRUNE                 	77	/* 0x4d Pattern fails at this startpoint if no-backtracking through this */
 #define	MARKPOINT             	78	/* 0x4e Push the current location for rollback by cut. */
 #define	SKIP                  	79	/* 0x4f On failure skip forward (to the mark) before retrying */
@@ -363,7 +363,7 @@ static const U8 regarglen[] = {
 	0,                                   	/* ENDLIKE      */
 	0,                                   	/* OPFAIL       */
 	EXTRA_SIZE(struct regnode_1),        	/* ACCEPT       */
-	0,                                   	/* VERB         */
+	EXTRA_SIZE(struct regnode_1),        	/* VERB         */
 	EXTRA_SIZE(struct regnode_1),        	/* PRUNE        */
 	EXTRA_SIZE(struct regnode_1),        	/* MARKPOINT    */
 	EXTRA_SIZE(struct regnode_1),        	/* SKIP         */
@@ -658,6 +658,50 @@ EXTCONST char * const PL_reg_extflags_name[] = {
 	"SKIPWHITE",        /* 0x20000000 */
 	"WHITE",            /* 0x40000000 */
 	"NULL",             /* 0x80000000 */
+};
+#endif /* DOINIT */
+
+/* The following have no fixed length. U8 so we can do strchr() on it. */
+#define REGNODE_VARIES(node) (PL_varies_bitmask[(node) >> 3] & (1 << ((node) & 7)))
+
+#ifndef DOINIT
+EXTCONST U8 PL_varies[] __attribute__deprecated__;
+#else
+EXTCONST U8 PL_varies[] __attribute__deprecated__ = {
+    CLUMP, BRANCH, BACK, STAR, PLUS, CURLY, CURLYN, CURLYM, CURLYX, WHILEM,
+    REF, REFF, REFFL, SUSPEND, IFTHEN, BRANCHJ, NREF, NREFF, NREFFL,
+    0
+};
+#endif /* DOINIT */
+
+#ifndef DOINIT
+EXTCONST U8 PL_varies_bitmask[];
+#else
+EXTCONST U8 PL_varies_bitmask[] = {
+    0x00, 0x00, 0x00, 0xC0, 0xC1, 0x9F, 0x33, 0x01, 0x38, 0x00, 0x00, 0x00
+};
+#endif /* DOINIT */
+
+/* The following always have a length of 1. U8 we can do strchr() on it. */
+/* (Note that length 1 means "one character" under UTF8, not "one octet".) */
+#define REGNODE_SIMPLE(node) (PL_simple_bitmask[(node) >> 3] & (1 << ((node) & 7)))
+
+#ifndef DOINIT
+EXTCONST U8 PL_simple[] __attribute__deprecated__;
+#else
+EXTCONST U8 PL_simple[] __attribute__deprecated__ = {
+    REG_ANY, SANY, CANY, ANYOF, ALNUM, ALNUML, NALNUM, NALNUML, SPACE,
+    SPACEL, NSPACE, NSPACEL, DIGIT, NDIGIT, VERTWS, NVERTWS, HORIZWS,
+    NHORIZWS,
+    0
+};
+#endif /* DOINIT */
+
+#ifndef DOINIT
+EXTCONST U8 PL_simple_bitmask[];
+#else
+EXTCONST U8 PL_simple_bitmask[] = {
+    0x00, 0xC0, 0xFF, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x00
 };
 #endif /* DOINIT */
 

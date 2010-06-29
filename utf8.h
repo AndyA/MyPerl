@@ -20,6 +20,16 @@
 #define uvuni_to_utf8(d, uv)		uvuni_to_utf8_flags(d, uv, 0)
 #define is_utf8_string_loc(s, len, ep)	is_utf8_string_loclen(s, len, ep, 0)
 
+/*
+=for apidoc ibcmp_utf8
+
+This is a synonym for (! foldEQ_utf8())
+
+=cut
+*/
+#define ibcmp_utf8(s1, pe1, l1, u1, s2, pe2, l2, u2) \
+		    cBOOL(! foldEQ_utf8(s1, pe1, l1, u1, s2, pe2, l2, u2))
+
 #ifdef EBCDIC
 /* The equivalent of these macros but implementing UTF-EBCDIC
    are in the following header file:
@@ -104,13 +114,15 @@ As you can see, the continuation bytes all begin with C<10>, and the
 leading bits of the start byte tell how many bytes there are in the
 encoded character.
 
+Perl's extended UTF-8 means we can have start bytes up to FF.
+
 */
 
 
 #define UNI_IS_INVARIANT(c)		(((UV)c) <  0x80)
 /* Note that C0 and C1 are invalid in legal UTF8, so the lower bound of the
  * below might ought to be C2 */
-#define UTF8_IS_START(c)		(((U8)c) >= 0xc0 && (((U8)c) <= 0xfd))
+#define UTF8_IS_START(c)		(((U8)c) >= 0xc0)
 #define UTF8_IS_CONTINUATION(c)		(((U8)c) >= 0x80 && (((U8)c) <= 0xbf))
 #define UTF8_IS_CONTINUED(c) 		(((U8)c) &  0x80)
 #define UTF8_IS_DOWNGRADEABLE_START(c)	(((U8)c & 0xfc) == 0xc0)
@@ -250,8 +262,6 @@ encoded character.
 #ifdef HAS_QUAD
 #    define UTF8_QUAD_MAX	UINT64_C(0x1000000000)
 #endif
-
-#define UTF8_IS_ASCII(c) UTF8_IS_INVARIANT(c)
 
 #define UNICODE_GREEK_CAPITAL_LETTER_SIGMA	0x03A3
 #define UNICODE_GREEK_SMALL_LETTER_FINAL_SIGMA	0x03C2

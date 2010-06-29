@@ -76,13 +76,9 @@ typedef enum {
 #endif
 
 /* There is collusion here with sv_clear - sv_clear exits early for SVt_NULL
-   and SVt_IV, so never reaches the clause at the end that uses
-   sv_type_details->body_size to determine whether to call safefree(). Hence
-   body_size can be set no-zero to record the size of PTEs and HEs, without
-   fear of bogus frees.  */
-#ifdef PERL_IN_SV_C
-#define PTE_SVSLOT	SVt_IV
-#endif
+   so never reaches the clause at the end that uses sv_type_details->body_size
+   to determine whether to call safefree(). Hence body_size can be set
+   non-zero to record the size of HEs, without fear of bogus frees.  */
 #if defined(PERL_IN_HV_C) || defined(PERL_IN_XS_APITEST)
 #define HE_SVSLOT	SVt_NULL
 #endif
@@ -398,8 +394,9 @@ perform the upgrade if necessary.  See C<svtype>.
 /* RV upwards. However, SVf_ROK and SVp_IOK are exclusive  */
 #define SVprv_WEAKREF   0x80000000  /* Weak reference */
 
-#define _XPV_HEAD	\
-    union _xnvu xnv_u;	\
+#define _XPV_HEAD							\
+    HV*		xmg_stash;	/* class package */			\
+    union _xmgu	xmg_u;							\
     STRLEN	xpv_cur;	/* length of svu_pv as a C string */    \
     STRLEN	xpv_len 	/* allocated size */
 
@@ -419,12 +416,9 @@ union _xnvu {
 
 union _xivu {
     IV	    xivu_iv;		/* integer value */
-				/* xpvfm: lines */
     UV	    xivu_uv;
-    void *  xivu_p1;
-    I32	    xivu_i32;
+    I32	    xivu_i32;		/* BmUSEFUL */
     HEK *   xivu_namehek;	/* xpvlv, xpvgv: GvNAME */
-    HV *    xivu_hv;		/* regexp: paren_names */
 };
 
 union _xmgu {
@@ -453,23 +447,20 @@ struct xpvuv {
 struct xpvnv {
     _XPV_HEAD;
     union _xivu xiv_u;
+    union _xnvu xnv_u;
 };
-
-#define _XPVMG_HEAD				    \
-    union _xivu xiv_u;				    \
-    union _xmgu	xmg_u;				    \
-    HV*		xmg_stash	/* class package */
 
 /* This structure must match the beginning of struct xpvhv in hv.h. */
 struct xpvmg {
     _XPV_HEAD;
-    _XPVMG_HEAD;
+    union _xivu xiv_u;
+    union _xnvu xnv_u;
 };
 
 struct xpvlv {
     _XPV_HEAD;
-    _XPVMG_HEAD;
-
+    union _xivu xiv_u;
+    union _xnvu xnv_u;
     STRLEN	xlv_targoff;
     STRLEN	xlv_targlen;
     SV*		xlv_targ;
@@ -481,7 +472,8 @@ struct xpvlv {
    Boyer-Moore.  */
 struct xpvgv {
     _XPV_HEAD;
-    _XPVMG_HEAD;
+    union _xivu xiv_u;
+    union _xnvu xnv_u;
 };
 
 /* This structure must match XPVCV in cv.h */
@@ -509,44 +501,41 @@ typedef U16 cv_flags_t;
 
 struct xpvfm {
     _XPV_HEAD;
-    _XPVMG_HEAD;
     _XPVCV_COMMON;
+    IV		xfm_lines;
 };
-
-#define _XPVIO_TAIL							\
-    PerlIO *	xio_ifp;	/* ifp and ofp are normally the same */	\
-    PerlIO *	xio_ofp;	/* but sockets need separate streams */	\
-    /* Cray addresses everything by word boundaries (64 bits) and	\
-     * code and data pointers cannot be mixed (which is exactly what	\
-     * Perl_filter_add() tries to do with the dirp), hence the		\
-     *  following union trick (as suggested by Gurusamy Sarathy).	\
-     * For further information see Geir Johansen's problem report	\
-     * titled [ID 20000612.002] Perl problem on Cray system		\
-     * The any pointer (known as IoANY()) will also be a good place	\
-     * to hang any IO disciplines to.					\
-     */									\
-    union {								\
-	DIR *	xiou_dirp;	/* for opendir, readdir, etc */		\
-	void *	xiou_any;	/* for alignment */			\
-    } xio_dirpu;							\
-    /* IV xio_lines is now in IVX  $. */				\
-    IV		xio_page;	/* $% */				\
-    IV		xio_page_len;	/* $= */				\
-    IV		xio_lines_left;	/* $- */				\
-    char *	xio_top_name;	/* $^ */				\
-    GV *	xio_top_gv;	/* $^ */				\
-    char *	xio_fmt_name;	/* $~ */				\
-    GV *	xio_fmt_gv;	/* $~ */				\
-    char *	xio_bottom_name;/* $^B */				\
-    GV *	xio_bottom_gv;	/* $^B */				\
-    char	xio_type;						\
-    U8		xio_flags
 
 
 struct xpvio {
     _XPV_HEAD;
-    _XPVMG_HEAD;
-    _XPVIO_TAIL;
+    union _xivu xiv_u;
+    PerlIO *	xio_ifp;	/* ifp and ofp are normally the same */
+    PerlIO *	xio_ofp;	/* but sockets need separate streams */
+    /* Cray addresses everything by word boundaries (64 bits) and
+     * code and data pointers cannot be mixed (which is exactly what
+     * Perl_filter_add() tries to do with the dirp), hence the
+     *  following union trick (as suggested by Gurusamy Sarathy).
+     * For further information see Geir Johansen's problem report
+     * titled [ID 20000612.002] Perl problem on Cray system
+     * The any pointer (known as IoANY()) will also be a good place
+     * to hang any IO disciplines to.
+     */
+    union {
+	DIR *	xiou_dirp;	/* for opendir, readdir, etc */
+	void *	xiou_any;	/* for alignment */
+    } xio_dirpu;
+    /* IV xio_lines is now in IVX  $. */
+    IV		xio_page;	/* $% */
+    IV		xio_page_len;	/* $= */
+    IV		xio_lines_left;	/* $- */
+    char *	xio_top_name;	/* $^ */
+    GV *	xio_top_gv;	/* $^ */
+    char *	xio_fmt_name;	/* $~ */
+    GV *	xio_fmt_gv;	/* $~ */
+    char *	xio_bottom_name;/* $^B */
+    GV *	xio_bottom_gv;	/* $^B */
+    char	xio_type;
+    U8		xio_flags;
 };
 
 #define xio_dirp	xio_dirpu.xiou_dirp
@@ -1072,6 +1061,7 @@ the scalar's value cannot change unless written to.
 	    assert(SvTYPE(_svivx) != SVt_PVCV);				\
 	    assert(SvTYPE(_svivx) != SVt_PVFM);				\
 	    assert(SvTYPE(_svivx) != SVt_PVIO);				\
+	    assert(SvTYPE(_svivx) != SVt_REGEXP);			\
 	    assert(!isGV_with_GP(_svivx));				\
 	    &(((XPVIV*) MUTABLE_PTR(SvANY(_svivx)))->xiv_iv);		\
 	 }))
@@ -1083,6 +1073,7 @@ the scalar's value cannot change unless written to.
 	    assert(SvTYPE(_svuvx) != SVt_PVCV);				\
 	    assert(SvTYPE(_svuvx) != SVt_PVFM);				\
 	    assert(SvTYPE(_svuvx) != SVt_PVIO);				\
+	    assert(SvTYPE(_svuvx) != SVt_REGEXP);			\
 	    assert(!isGV_with_GP(_svuvx));				\
 	    &(((XPVUV*) MUTABLE_PTR(SvANY(_svuvx)))->xuv_uv);		\
 	 }))
@@ -1094,6 +1085,7 @@ the scalar's value cannot change unless written to.
 	    assert(SvTYPE(_svnvx) != SVt_PVCV);				\
 	    assert(SvTYPE(_svnvx) != SVt_PVFM);				\
 	    assert(SvTYPE(_svnvx) != SVt_PVIO);				\
+	    assert(SvTYPE(_svnvx) != SVt_REGEXP);			\
 	    assert(!isGV_with_GP(_svnvx));				\
 	    &(((XPVNV*) MUTABLE_PTR(SvANY(_svnvx)))->xnv_u.xnv_nv);	\
 	 }))
@@ -1168,6 +1160,9 @@ the scalar's value cannot change unless written to.
 #define SvIV_please(sv) \
 	STMT_START {if (!SvIOKp(sv) && (SvNOK(sv) || SvPOK(sv))) \
 		(void) SvIV(sv); } STMT_END
+#define SvIV_please_nomg(sv) \
+	STMT_START {if (!SvIOKp(sv) && (SvNOK(sv) || SvPOK(sv))) \
+		(void) SvIV_nomg(sv); } STMT_END
 #define SvIV_set(sv, val) \
 	STMT_START { assert(SvTYPE(sv) == SVt_IV || SvTYPE(sv) >= SVt_PVIV); \
 		assert(SvTYPE(sv) != SVt_PVAV);		\
@@ -1306,7 +1301,7 @@ the scalar's value cannot change unless written to.
 
 #endif
 
-#define FmLINES(sv)	((XPVFM*)  SvANY(sv))->xiv_u.xivu_iv
+#define FmLINES(sv)	((XPVFM*)  SvANY(sv))->xfm_lines
 
 #define LvTYPE(sv)	((XPVLV*)  SvANY(sv))->xlv_type
 #define LvTARG(sv)	((XPVLV*)  SvANY(sv))->xlv_targ
@@ -1424,6 +1419,9 @@ otherwise use the more efficient C<SvIV>.
 Coerce the given SV to a double and return it. See C<SvNVx> for a version
 which guarantees to evaluate sv only once.
 
+=for apidoc Am|NV|SvNV_nomg|SV* sv
+Like C<SvNV> but doesn't process magic.
+
 =for apidoc Am|NV|SvNVx|SV* sv
 Coerces the given SV to a double and returns it. Guarantees to evaluate
 C<sv> only once. Only use this if C<sv> is an expression with side effects,
@@ -1515,6 +1513,7 @@ Like sv_utf8_upgrade, but doesn't do magic on C<sv>
 
 #define SvIV_nomg(sv) (SvIOK(sv) ? SvIVX(sv) : sv_2iv_flags(sv, 0))
 #define SvUV_nomg(sv) (SvIOK(sv) ? SvUVX(sv) : sv_2uv_flags(sv, 0))
+#define SvNV_nomg(sv) (SvNOK(sv) ? SvNVX(sv) : sv_2nv_flags(sv, 0))
 
 /* ----*/
 
@@ -1698,6 +1697,9 @@ Like sv_utf8_upgrade, but doesn't do magic on C<sv>
  * This is used when the caller has already determined it is, and avoids
  * redundant work */
 #define SV_FORCE_UTF8_UPGRADE	4096
+/* if (after resolving magic etc), the SV is found to be overloaded,
+ * don't call the overload magic, just return as-is */
+#define SV_SKIP_OVERLOAD	8192
 
 /* The core is safe for this COW optimisation. XS code on CPAN may not be.
    So only default to doing the COW setup if we're in the core.
@@ -1778,6 +1780,7 @@ mg.c:1024: warning: left-hand operand of comma expression has no effect
 #define sv_utf8_upgrade(sv) sv_utf8_upgrade_flags(sv, SV_GMAGIC)
 #define sv_2iv(sv) sv_2iv_flags(sv, SV_GMAGIC)
 #define sv_2uv(sv) sv_2uv_flags(sv, SV_GMAGIC)
+#define sv_2nv(sv) sv_2nv_flags(sv, SV_GMAGIC)
 #define sv_insert(bigstr, offset, len, little, littlelen)		\
 	Perl_sv_insert_flags(aTHX_ (bigstr),(offset), (len), (little),	\
 			     (littlelen), SV_GMAGIC)
@@ -1933,6 +1936,8 @@ struct clone_params {
   AV* stashes;
   UV  flags;
   PerlInterpreter *proto_perl;
+  PerlInterpreter *new_perl;
+  AV *unreferenced;
 };
 
 /*

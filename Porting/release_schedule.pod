@@ -1,3 +1,5 @@
+=encoding utf8
+
 =head1 Release schedule
 
 This document lists the release engineers for at least the next
@@ -30,6 +32,8 @@ you should reset the version numbers to the next blead series.
  July 20         -   David Golden
  August 20       -   Florian Ragwitz
  September 20    -   Steve Hay
+ October 20      -   Tatsuhiko Miyagawa
+ November 20     -   Chris Williams
 
 =head1 VICTIMS
 
@@ -40,13 +44,15 @@ and can't find a substitute amongst this list, mail p5p.
 Jesse Vincent <F<jesse@cpan.org>>
 Leon Brocard <F<acme@astray.com>>
 Yves Orton <F<demerphq@gmail.com>>
-Ricardo Signes <F<rjbs@manxome.org>>
+Ricardo Signes <F<rjbs@cpan.org>>
 Steve Hay <F<steve.m.hay@googlemail.com>>
 Ask Bjørn Hansen <F<ask@perl.org>>
 David Golden <F<dagolden@cpan.org>>
 Philippe Bruhat <F<book@cpan.org>>
 Matt Trout <F<mst@shadowcat.co.uk>>
 Florian Ragwitz <F<rafl@debian.org>>
+Tatsuhiko Miyagawa <F<miyagawa@bulknews.net>>
+Chris Williams <F<bingos@cpan.org>>
 
 =head2 Reticent victims
 

@@ -13,16 +13,50 @@ my $make_exceptions_list = ($ARGV[0]||'') eq '--make-exceptions-list';
 chdir '..' or die "Can't chdir ..: $!";
 BEGIN { defined $ENV{PERL_UNICODE} and push @INC, "lib"; }
 
-open my $diagfh, "<", "pod/perldiag.pod"
-  or die "Can't open pod/perldiag.pod: $!";
+my @functions;
+
+open my $func_fh, "<", "embed.fnc" or die "Can't open embed.fnc: $!";
+
+# Look for functions in embed.fnc that look like they could be diagnostic ones.
+while (<$func_fh>) {
+  chomp;
+  s/^\s+//;
+  while (s/\s*\\$//) {      # Grab up all continuation lines, these end in \
+    my $next = <$func_fh>;
+    $next =~ s/^\s+//;
+    chomp $next;
+    $_ .= $next;
+  }
+  next if /^:/;     # Lines beginning with colon are comments.
+  next unless /\|/; # Lines without a vertical bar are something we can't deal
+                    # with
+  my @fields = split /\s*\|\s*/;
+  next unless $fields[2] =~ /warn|err|(\b|_)die|croak/i;
+  push @functions, $fields[2];
+
+  # The flag p means that this function may have a 'Perl_' prefix
+  # The flag s means that this function may have a 'S_' prefix
+  push @functions, "Perl_$fields[2]", if $fields[0] =~ /p/;
+  push @functions, "S_$fields[2]", if $fields[0] =~ /s/;
+}
+
+close $func_fh;
+
+my $function_re = join '|', @functions;
+my $source_msg_re = qr/(?<routine>\bDIE\b|$function_re)/;
 
 my %entries;
+
+# Get the ignores that are compiled into this file
 while (<DATA>) {
   chomp;
   $entries{$_}{todo}=1;
 }
 
 my $cur_entry;
+open my $diagfh, "<", "pod/perldiag.pod"
+  or die "Can't open pod/perldiag.pod: $!";
+
 while (<$diagfh>) {
   if (m/^=item (.*)/) {
     $cur_entry = $1;
@@ -35,6 +69,7 @@ while (<$diagfh>) {
   }
 }
 
+# Recursively descend looking for source files.
 my @todo = <*>;
 while (@todo) {
   my $todo = shift @todo;
@@ -74,7 +109,9 @@ sub check_file {
     }
     next if /^#/;
     next if /^ * /;
-    while (m/\bDIE\b|Perl_(croak|die|warn(er)?)/ and not m/\);$/) {
+
+    # Loop to accumulate the message text all on one line.
+    while (m/$source_msg_re/ and not m/\);$/) {
       my $nextline = <$codefh>;
       # Means we fell off the end of the file.  Not terribly surprising;
       # this code tries to merge a lot of things that aren't regular C
@@ -108,27 +145,28 @@ sub check_file {
       s/%"\s*$from/\%$specialformats{$from}"/g;
     }
     # The %"foo" thing needs to happen *before* this regex.
-    if (m/(?:DIE|Perl_(croak|die|warn|warner))(?:_nocontext)? \s*
+    if (m/$source_msg_re(?:_nocontext)? \s*
           \(aTHX_ \s*
-          (?:packWARN\d*\((.*?)\),)? \s*
-          "((?:\\"|[^"])*?)"/x) {
-      # diag($_);
-      # DIE is just return Perl_die
-      my $severity = {croak => [qw/P F/],
+          (?:packWARN\d*\((?<category>.*?)\),)? \s*
+          "(?<text>(?:\\"|[^"])*?)"/x)
+    {
+    # diag($_);
+    # DIE is just return Perl_die
+    my $severity = {croak => [qw/P F/],
                       die   => [qw/P F/],
                       warn  => [qw/W D S/],
-                     }->{$1||'die'};
-      my @categories;
-      if ($2) {
-        @categories = map {s/^WARN_//; lc $_} split /\s*[|,]\s*/, $2;
-      }
-      my $name;
-      if ($listed_as and $listed_as_line == $.) {
+                     }->{$+{'routine'}||'die'};
+    my @categories;
+    if ($+{'category'}) {
+        @categories = map {s/^WARN_//; lc $_} split /\s*[|,]\s*/, $+{'category'};
+    }
+    my $name;
+    if ($listed_as and $listed_as_line == $.) {
         $name = $listed_as;
-      } else {
-        $name = $3;
-        # The form listed in perldiag ignores most sorts of fancy printf formatting,
-        # or makes it more perlish.
+    } else {
+        $name = $+{'text'};
+        # The form listed in perldiag ignores most sorts of fancy printf
+        # formatting, or makes it more perlish.
         $name =~ s/%%/\\%/g;
         $name =~ s/%l[ud]/%d/g;
         $name =~ s/%\.(\d+|\*)s/\%s/g;
@@ -136,6 +174,7 @@ sub check_file {
         $name =~ s/\\t/\t/g;
         $name =~ s/\\n/ /g;
         $name =~ s/\s+$//;
+        $name =~ s/(\\)\\/$1/g;
       }
 
       # Extra explanatory info on an already-listed error, doesn't
@@ -154,7 +193,7 @@ sub check_file {
       if (exists $entries{$name}) {
         if ($entries{$name}{todo}) {
         TODO: {
-	    no warnings 'once';
+            no warnings 'once';
             local $::TODO = 'in DATA';
             fail("Presence of '$name' from $codefn line $.");
           }
@@ -226,9 +265,9 @@ Can't %s `%s' with ARGV[0] being `%s' (looking for executables only, not found)
 Can't take %s of %f
 Can't use '%c' after -mname
 Can't use string ("%s"%s) as a subroutine ref while "strict refs" in use
-Can't use \\%c to mean $%c in expression
+Can't use \%c to mean $%c in expression
 Can't use when() outside a topicalizer
-\\%c better written as $%c
+\%c better written as $%c
 Character(s) in '%c' format wrapped in %s
 $%c is no longer supported
 Cloning substitution context is unimplemented
@@ -240,7 +279,7 @@ Corrupted regexp opcode %d > %d
 Debug leaking scalars child failed%s%s with errno %d: %s
 Deep recursion on anonymous subroutine
 defined(\%hash) is deprecated
-Don't know how to handle magic of type \\%o
+Don't know how to handle magic of type \%o
 -Dp not implemented on this platform
 entering effective gid failed
 entering effective uid failed
@@ -258,12 +297,15 @@ glob failed (child exited with status %d%s)
 Goto undefined subroutine
 Goto undefined subroutine &%s
 Hash \%%s missing the \% in argument %d of %s()
-Illegal character \\%03o (carriage return)
+Illegal character \%03o (carriage return)
 Illegal character %sin prototype for %s : %s
+Integer overflow in binary number
 Integer overflow in decimal number
+Integer overflow in hexadecimal number
+Integer overflow in octal number
 Integer overflow in version %d
 internal \%<num>p might conflict with future printf extensions
-invalid control request: '\\%03o'
+invalid control request: '\%03o'
 Invalid module name %s with -%c option: contains single ':'
 invalid option -D%c, use -D'' to see choices
 Invalid range "%c-%c" in transliteration operator
@@ -282,6 +324,7 @@ Invalid strict version format (1.[0-9] required)
 Invalid version format (alpha without decimal)
 Invalid version format (misplaced _ in number)
 Invalid version object
+It is proposed that "\c{" no longer be valid. It has historically evaluated to  ";".  If you disagree with this proposal, send email to perl5-porters@perl.org Otherwise, or in the meantime, you can work around this failure by changing "\c{" to ";"
 'j' not supported on this platform
 'J' not supported on this platform
 Layer does not match this perl
@@ -312,7 +355,7 @@ PERL_SIGNALS illegal: "%s"
 Perl %s required (did you mean %s?)--this is only %s, stopped
 Perl %s required--this is only %s, stopped
 Perls since %s too modern--this is %s, stopped
-Possible unintended interpolation of $\\ in regex
+Possible unintended interpolation of $\ in regex
 ptr wrong %p != %p fl=%08
 Recompile perl with -DDEBUGGING to use -D switch (did you mean -d ?)
 Recursive call to Perl_load_module in PerlIO_find_layer
@@ -323,6 +366,7 @@ refcnt_inc: fd %d < 0
 refcnt_inc: fd %d: %d <= 0
 Reversed %c= operator
 Runaway prototype
+%s(%.0
 %s(%.0f) failed
 %s(%.0f) too large
 Scalar value %s better written as $%s
@@ -365,7 +409,6 @@ Unexpected constant lvalue entersub entry via type/targ %d:%d
 Unicode non-character 0x%04
 Unknown PerlIO layer "scalar"
 Unknown Unicode option letter '%c'
-unrecognised control character '%c'
 Unstable directory path, current directory changed unexpectedly
 Unsupported script encoding UTF-16BE
 Unsupported script encoding UTF-16LE
@@ -379,7 +422,7 @@ Usage: VMS::Filespec::unixrealpath(spec)
 Usage: VMS::Filespec::vmsrealpath(spec)
 Use of inherited AUTOLOAD for non-method %s::%s() is deprecated
 UTF-16 surrogate 0x%04
-utf8 "\\x%02X" does not map to Unicode
+utf8 "\x%02X" does not map to Unicode
 Value of logical "%s" too long. Truncating to %i bytes
 value of node is %d in Offset macro
 Value of %s%s can be "0"; test with defined()

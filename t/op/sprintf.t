@@ -57,11 +57,11 @@ print '1..', scalar @tests, "\n";
 
 $SIG{__WARN__} = sub {
     if ($_[0] =~ /^Invalid conversion/) {
-	$w = ' INVALID';
+	$w .= ' INVALID';
     } elsif ($_[0] =~ /^Use of uninitialized value/) {
-	$w = ' UNINIT';
+	$w .= ' UNINIT';
     } elsif ($_[0] =~ /^Missing argument/) {
-	$w = ' MISSING';
+	$w .= ' MISSING';
     } else {
 	warn @_;
     }
@@ -70,7 +70,8 @@ $SIG{__WARN__} = sub {
 for ($i = 1; @tests; $i++) {
     ($template, $evalData, $result, $comment, $data) = @{shift @tests};
     $w = undef;
-    $x = sprintf(">$template<", @$evalData);
+    $x = sprintf($template, @$evalData);
+    $x = ">$x<" if defined $x;
     substr($x, -1, 0) = $w if $w;
     # $x may have 3 exponent digits, not 2
     my $y = $x;
@@ -373,6 +374,8 @@ __END__
 >%+8.1f<    >-1234.875<   > -1234.9<
 >%*.*f<     >[5, 2, 12.3456]< >12.35<
 >%f<        >0<           >0.000000<
+>%.0f<      >[]<          >0 MISSING<
+> %.0f<     >[]<          > 0 MISSING<
 >%.0f<      >0<           >0<
 >%.0f<      >2**38<       >274877906944<   >Should have exact int'l rep'n<
 >%.0f<      >0.1<         >0<
@@ -387,7 +390,9 @@ __END__
 >%g<        >12345.6789<  >12345.7<
 >%+g<       >12345.6789<  >+12345.7<
 >%#g<       >12345.6789<  >12345.7<
->%.0g<      >-0.0<	  >-0<		   >C99 standard mandates minus sign but C89 does not skip: MSWin32 VMS hpux:10.20 openbsd netbsd:1.5 irix darwin<
+>%.0g<      >[]<          >0 MISSING<
+> %.0g<     >[]<          > 0 MISSING<
+>%.0g<      >-0.0<        >-0<		   >C99 standard mandates minus sign but C89 does not skip: MSWin32 VMS hpux:10.20 openbsd netbsd:1.5 irix darwin<
 >%.0g<      >12345.6789<  >1e+04<
 >%#.0g<     >12345.6789<  >1.e+04<
 >%.2g<      >12345.6789<  >1.2e+04<
@@ -494,6 +499,8 @@ __END__
 >%#p<       >''<          >%#p INVALID<
 >%q<        >''<          >%q INVALID<
 >%r<        >''<          >%r INVALID<
+>%s<        >[]<          > MISSING<
+> %s<       >[]<          >  MISSING<
 >%s<        >'string'<    >string<
 >%10s<      >'string'<    >    string<
 >%+10s<     >'string'<    >    string<
@@ -680,7 +687,7 @@ __END__
 >%V-%s<		>["Hello"]<	>%V-Hello INVALID<
 >%K %d %d<	>[13, 29]<	>%K 13 29 INVALID<
 >%*.*K %d<	>[13, 29, 76]<	>%*.*K 13 INVALID<
->%4$K %d<	>[45, 67]<	>%4$K 45 INVALID<
+>%4$K %d<	>[45, 67]<	>%4$K 45 MISSING INVALID<
 >%d %K %d<	>[23, 45]<	>23 %K 45 INVALID<
 >%*v*999\$d %d %d<	>[11, 22, 33]<	>%*v*999\$d 11 22 INVALID<
 >%#b<		>0<	>0<

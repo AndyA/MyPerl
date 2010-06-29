@@ -208,124 +208,6 @@ Perl_sv_does(pTHX_ SV *sv, const char *const name)
     return does_it;
 }
 
-PERL_XS_EXPORT_C void XS_UNIVERSAL_isa(pTHX_ CV *cv);
-PERL_XS_EXPORT_C void XS_UNIVERSAL_can(pTHX_ CV *cv);
-PERL_XS_EXPORT_C void XS_UNIVERSAL_DOES(pTHX_ CV *cv);
-PERL_XS_EXPORT_C void XS_UNIVERSAL_VERSION(pTHX_ CV *cv);
-XS(XS_version_new);
-XS(XS_version_stringify);
-XS(XS_version_numify);
-XS(XS_version_normal);
-XS(XS_version_vcmp);
-XS(XS_version_boolean);
-#ifdef HASATTRIBUTE_NORETURN
-XS(XS_version_noop) __attribute__noreturn__;
-#else
-XS(XS_version_noop);
-#endif
-XS(XS_version_is_alpha);
-XS(XS_version_qv);
-XS(XS_version_is_qv);
-XS(XS_utf8_is_utf8);
-XS(XS_utf8_valid);
-XS(XS_utf8_encode);
-XS(XS_utf8_decode);
-XS(XS_utf8_upgrade);
-XS(XS_utf8_downgrade);
-XS(XS_utf8_unicode_to_native);
-XS(XS_utf8_native_to_unicode);
-XS(XS_Internals_SvREADONLY);
-XS(XS_Internals_SvREFCNT);
-XS(XS_Internals_hv_clear_placehold);
-XS(XS_PerlIO_get_layers);
-XS(XS_Internals_hash_seed);
-XS(XS_Internals_rehash_seed);
-XS(XS_Internals_HvREHASH);
-XS(XS_re_is_regexp); 
-XS(XS_re_regname);
-XS(XS_re_regnames);
-XS(XS_re_regnames_count);
-XS(XS_re_regexp_pattern);
-XS(XS_Tie_Hash_NamedCapture_FETCH);
-XS(XS_Tie_Hash_NamedCapture_STORE);
-XS(XS_Tie_Hash_NamedCapture_DELETE);
-XS(XS_Tie_Hash_NamedCapture_CLEAR);
-XS(XS_Tie_Hash_NamedCapture_EXISTS);
-XS(XS_Tie_Hash_NamedCapture_FIRSTK);
-XS(XS_Tie_Hash_NamedCapture_NEXTK);
-XS(XS_Tie_Hash_NamedCapture_SCALAR);
-XS(XS_Tie_Hash_NamedCapture_flags);
-
-void
-Perl_boot_core_UNIVERSAL(pTHX)
-{
-    dVAR;
-    static const char file[] = __FILE__;
-
-    newXS("UNIVERSAL::isa",             XS_UNIVERSAL_isa,         file);
-    newXS("UNIVERSAL::can",             XS_UNIVERSAL_can,         file);
-    newXS("UNIVERSAL::DOES",            XS_UNIVERSAL_DOES,        file);
-    newXS("UNIVERSAL::VERSION", 	XS_UNIVERSAL_VERSION, 	  file);
-    {
-	/* register the overloading (type 'A') magic */
-	PL_amagic_generation++;
-	/* Make it findable via fetchmethod */
-	newXS("version::()", XS_version_noop, file);
-	newXS("version::new", XS_version_new, file);
-	newXS("version::parse", XS_version_new, file);
-	newXS("version::(\"\"", XS_version_stringify, file);
-	newXS("version::stringify", XS_version_stringify, file);
-	newXS("version::(0+", XS_version_numify, file);
-	newXS("version::numify", XS_version_numify, file);
-	newXS("version::normal", XS_version_normal, file);
-	newXS("version::(cmp", XS_version_vcmp, file);
-	newXS("version::(<=>", XS_version_vcmp, file);
-	newXS("version::vcmp", XS_version_vcmp, file);
-	newXS("version::(bool", XS_version_boolean, file);
-	newXS("version::boolean", XS_version_boolean, file);
-	newXS("version::(nomethod", XS_version_noop, file);
-	newXS("version::noop", XS_version_noop, file);
-	newXS("version::is_alpha", XS_version_is_alpha, file);
-	newXS("version::qv", XS_version_qv, file);
-	newXS("version::declare", XS_version_qv, file);
-	newXS("version::is_qv", XS_version_is_qv, file);
-    }
-    newXS("utf8::is_utf8", XS_utf8_is_utf8, file);
-    newXS("utf8::valid", XS_utf8_valid, file);
-    newXS("utf8::encode", XS_utf8_encode, file);
-    newXS("utf8::decode", XS_utf8_decode, file);
-    newXS("utf8::upgrade", XS_utf8_upgrade, file);
-    newXS("utf8::downgrade", XS_utf8_downgrade, file);
-    newXS("utf8::native_to_unicode", XS_utf8_native_to_unicode, file);
-    newXS("utf8::unicode_to_native", XS_utf8_unicode_to_native, file);
-    newXSproto("Internals::SvREADONLY",XS_Internals_SvREADONLY, file, "\\[$%@];$");
-    newXSproto("Internals::SvREFCNT",XS_Internals_SvREFCNT, file, "\\[$%@];$");
-    newXSproto("Internals::hv_clear_placeholders",
-               XS_Internals_hv_clear_placehold, file, "\\%");
-    newXSproto("PerlIO::get_layers",
-               XS_PerlIO_get_layers, file, "*;@");
-    /* Providing a Regexp::DESTROY fixes #21347. See test in t/op/ref.t  */
-    CvFILE(newCONSTSUB(get_hv("Regexp::", GV_ADD), "DESTROY", NULL))
-	= (char *)file;
-    newXSproto("Internals::hash_seed",XS_Internals_hash_seed, file, "");
-    newXSproto("Internals::rehash_seed",XS_Internals_rehash_seed, file, "");
-    newXSproto("Internals::HvREHASH", XS_Internals_HvREHASH, file, "\\%");
-    newXSproto("re::is_regexp", XS_re_is_regexp, file, "$");
-    newXSproto("re::regname", XS_re_regname, file, ";$$");
-    newXSproto("re::regnames", XS_re_regnames, file, ";$");
-    newXSproto("re::regnames_count", XS_re_regnames_count, file, "");
-    newXSproto("re::regexp_pattern", XS_re_regexp_pattern, file, "$");
-    newXS("Tie::Hash::NamedCapture::FETCH", XS_Tie_Hash_NamedCapture_FETCH, file);
-    newXS("Tie::Hash::NamedCapture::STORE", XS_Tie_Hash_NamedCapture_STORE, file);
-    newXS("Tie::Hash::NamedCapture::DELETE", XS_Tie_Hash_NamedCapture_DELETE, file);
-    newXS("Tie::Hash::NamedCapture::CLEAR", XS_Tie_Hash_NamedCapture_CLEAR, file);
-    newXS("Tie::Hash::NamedCapture::EXISTS", XS_Tie_Hash_NamedCapture_EXISTS, file);
-    newXS("Tie::Hash::NamedCapture::FIRSTKEY", XS_Tie_Hash_NamedCapture_FIRSTK, file);
-    newXS("Tie::Hash::NamedCapture::NEXTKEY", XS_Tie_Hash_NamedCapture_NEXTK, file);
-    newXS("Tie::Hash::NamedCapture::SCALAR", XS_Tie_Hash_NamedCapture_SCALAR, file);
-    newXS("Tie::Hash::NamedCapture::flags", XS_Tie_Hash_NamedCapture_flags, file);
-}
-
 /*
 =for apidoc croak_xs_usage
 
@@ -336,7 +218,7 @@ A specialised variant of C<croak()> for emitting the usage message for xsubs
 works out the package name and subroutine name from C<cv>, and then calls
 C<croak()>. Hence if C<cv> is C<&ouch::awk>, it would call C<croak> as:
 
-    Perl_croak(aTHX_ "Usage %s::%s(%s)", "ouch" "awk", "eee_yow");
+    Perl_croak(aTHX_ "Usage: %s::%s(%s)", "ouch" "awk", "eee_yow");
 
 =cut
 */
@@ -510,20 +392,20 @@ XS(XS_UNIVERSAL_VERSION)
 	    if ( hv_exists(MUTABLE_HV(SvRV(req)), "qv", 2 ) ) {
 		Perl_croak(aTHX_ "%s version %"SVf" required--"
 		       "this is only version %"SVf"", HvNAME_get(pkg),
-		       SVfARG(vnormal(req)),
-		       SVfARG(vnormal(sv)));
+		       SVfARG(sv_2mortal(vnormal(req))),
+		       SVfARG(sv_2mortal(vnormal(sv))));
 	    } else {
 		Perl_croak(aTHX_ "%s version %"SVf" required--"
 		       "this is only version %"SVf"", HvNAME_get(pkg),
-		       SVfARG(vstringify(req)),
-		       SVfARG(vstringify(sv)));
+		       SVfARG(sv_2mortal(vstringify(req))),
+		       SVfARG(sv_2mortal(vstringify(sv))));
 	    }
 	}
 
     }
 
     if ( SvOK(sv) && sv_derived_from(sv, "version") ) {
-	ST(0) = vstringify(sv);
+	ST(0) = sv_2mortal(vstringify(sv));
     } else {
 	ST(0) = sv;
     }
@@ -574,10 +456,10 @@ XS(XS_version_stringify)
 	 croak_xs_usage(cv, "lobj, ...");
      SP -= items;
      {
-	  SV *	lobj;
+	  SV *	lobj = ST(0);
 
-	  if (sv_derived_from(ST(0), "version")) {
-	       lobj = SvRV(ST(0));
+	  if (sv_derived_from(lobj, "version") && SvROK(lobj)) {
+	       lobj = SvRV(lobj);
 	  }
 	  else
 	       Perl_croak(aTHX_ "lobj is not of type version");
@@ -597,10 +479,10 @@ XS(XS_version_numify)
 	 croak_xs_usage(cv, "lobj, ...");
      SP -= items;
      {
-	  SV *	lobj;
+	  SV *	lobj = ST(0);
 
-	  if (sv_derived_from(ST(0), "version")) {
-	       lobj = SvRV(ST(0));
+	  if (sv_derived_from(lobj, "version") && SvROK(lobj)) {
+	       lobj = SvRV(lobj);
 	  }
 	  else
 	       Perl_croak(aTHX_ "lobj is not of type version");
@@ -620,10 +502,10 @@ XS(XS_version_normal)
 	 croak_xs_usage(cv, "lobj, ...");
      SP -= items;
      {
-	  SV *	lobj;
+	  SV *	lobj = ST(0);
 
-	  if (sv_derived_from(ST(0), "version")) {
-	       lobj = SvRV(ST(0));
+	  if (sv_derived_from(lobj, "version") && SvROK(lobj)) {
+	       lobj = SvRV(lobj);
 	  }
 	  else
 	       Perl_croak(aTHX_ "lobj is not of type version");
@@ -643,10 +525,10 @@ XS(XS_version_vcmp)
 	 croak_xs_usage(cv, "lobj, ...");
      SP -= items;
      {
-	  SV *	lobj;
+	  SV *	lobj = ST(0);
 
-	  if (sv_derived_from(ST(0), "version")) {
-	       lobj = SvRV(ST(0));
+	  if (sv_derived_from(lobj, "version") && SvROK(lobj)) {
+	       lobj = SvRV(lobj);
 	  }
 	  else
 	       Perl_croak(aTHX_ "lobj is not of type version");
@@ -659,7 +541,8 @@ XS(XS_version_vcmp)
 
 	       if ( ! sv_derived_from(robj, "version") )
 	       {
-		    robj = new_version(SvOK(robj) ? robj : newSVpvs("0"));
+		    robj = new_version(SvOK(robj) ? robj : newSVpvs_flags("0", SVs_TEMP));
+		    sv_2mortal(robj);
 	       }
 	       rvs = SvRV(robj);
 
@@ -687,7 +570,7 @@ XS(XS_version_boolean)
     if (items < 1)
 	croak_xs_usage(cv, "lobj, ...");
     SP -= items;
-    if (sv_derived_from(ST(0), "version")) {
+    if (sv_derived_from(ST(0), "version") && SvROK(ST(0))) {
 	SV * const lobj = SvRV(ST(0));
 	SV * const rs = newSViv( vcmp(lobj,new_version(newSVpvs("0"))) );
 	mPUSHs(rs);
@@ -704,7 +587,7 @@ XS(XS_version_noop)
     dXSARGS;
     if (items < 1)
 	croak_xs_usage(cv, "lobj, ...");
-    if (sv_derived_from(ST(0), "version"))
+    if (sv_derived_from(ST(0), "version") && SvROK(ST(0)))
 	Perl_croak(aTHX_ "operation not supported with version object");
     else
 	Perl_croak(aTHX_ "lobj is not of type version");
@@ -720,7 +603,7 @@ XS(XS_version_is_alpha)
     if (items != 1)
 	croak_xs_usage(cv, "lobj");
     SP -= items;
-    if (sv_derived_from(ST(0), "version")) {
+    if (sv_derived_from(ST(0), "version") && SvROK(ST(0))) {
 	SV * const lobj = ST(0);
 	if ( hv_exists(MUTABLE_HV(SvRV(lobj)), "alpha", 5 ) )
 	    XSRETURN_YES;
@@ -774,7 +657,7 @@ XS(XS_version_is_qv)
     if (items != 1)
 	croak_xs_usage(cv, "lobj");
     SP -= items;
-    if (sv_derived_from(ST(0), "version")) {
+    if (sv_derived_from(ST(0), "version") && SvROK(ST(0))) {
 	SV * const lobj = ST(0);
 	if ( hv_exists(MUTABLE_HV(SvRV(lobj)), "qv", 2 ) )
 	    XSRETURN_YES;
@@ -794,7 +677,8 @@ XS(XS_utf8_is_utf8)
      if (items != 1)
 	 croak_xs_usage(cv, "sv");
      else {
-	const SV * const sv = ST(0);
+	SV * const sv = ST(0);
+	SvGETMAGIC(sv);
 	    if (SvUTF8(sv))
 		XSRETURN_YES;
 	    else
@@ -1289,10 +1173,10 @@ XS(XS_re_regexp_pattern)
 
     if ((re = SvRX(ST(0)))) /* assign deliberate */
     {
-        /* Housten, we have a regex! */
+        /* Houston, we have a regex! */
         SV *pattern;
         STRLEN left = 0;
-        char reflags[6];
+        char reflags[sizeof(INT_PAT_MODS)];
 
         if ( GIMME_V == G_ARRAY ) {
             /*
@@ -1400,7 +1284,7 @@ XS(XS_Tie_Hash_NamedCapture_STORE)
 
     if (!rx || !SvROK(ST(0))) {
         if (!PL_localizing)
-            Perl_croak(aTHX_ "%s", PL_no_modify);
+            Perl_croak_no_modify(aTHX);
         else
             XSRETURN_UNDEF;
     }
@@ -1422,7 +1306,7 @@ XS(XS_Tie_Hash_NamedCapture_DELETE)
 	croak_xs_usage(cv, "$key, $flags");
 
     if (!rx || !SvROK(ST(0)))
-        Perl_croak(aTHX_ "%s", PL_no_modify);
+        Perl_croak_no_modify(aTHX);
 
     SP -= items;
 
@@ -1443,7 +1327,7 @@ XS(XS_Tie_Hash_NamedCapture_CLEAR)
     rx = PL_curpm ? PM_GETRE(PL_curpm) : NULL;
 
     if (!rx || !SvROK(ST(0)))
-        Perl_croak(aTHX_ "%s", PL_no_modify);
+        Perl_croak_no_modify(aTHX);
 
     SP -= items;
 
@@ -1588,6 +1472,87 @@ XS(XS_Tie_Hash_NamedCapture_flags)
 	return;
 }
 
+struct xsub_details {
+    const char *name;
+    XSUBADDR_t xsub;
+    const char *proto;
+};
+
+struct xsub_details details[] = {
+    {"UNIVERSAL::isa", XS_UNIVERSAL_isa, NULL},
+    {"UNIVERSAL::can", XS_UNIVERSAL_can, NULL},
+    {"UNIVERSAL::DOES", XS_UNIVERSAL_DOES, NULL},
+    {"UNIVERSAL::VERSION", XS_UNIVERSAL_VERSION, NULL},
+    {"version::()", XS_version_noop, NULL},
+    {"version::new", XS_version_new, NULL},
+    {"version::parse", XS_version_new, NULL},
+    {"version::(\"\"", XS_version_stringify, NULL},
+    {"version::stringify", XS_version_stringify, NULL},
+    {"version::(0+", XS_version_numify, NULL},
+    {"version::numify", XS_version_numify, NULL},
+    {"version::normal", XS_version_normal, NULL},
+    {"version::(cmp", XS_version_vcmp, NULL},
+    {"version::(<=>", XS_version_vcmp, NULL},
+    {"version::vcmp", XS_version_vcmp, NULL},
+    {"version::(bool", XS_version_boolean, NULL},
+    {"version::boolean", XS_version_boolean, NULL},
+    {"version::(nomethod", XS_version_noop, NULL},
+    {"version::noop", XS_version_noop, NULL},
+    {"version::is_alpha", XS_version_is_alpha, NULL},
+    {"version::qv", XS_version_qv, NULL},
+    {"version::declare", XS_version_qv, NULL},
+    {"version::is_qv", XS_version_is_qv, NULL},
+    {"utf8::is_utf8", XS_utf8_is_utf8, NULL},
+    {"utf8::valid", XS_utf8_valid, NULL},
+    {"utf8::encode", XS_utf8_encode, NULL},
+    {"utf8::decode", XS_utf8_decode, NULL},
+    {"utf8::upgrade", XS_utf8_upgrade, NULL},
+    {"utf8::downgrade", XS_utf8_downgrade, NULL},
+    {"utf8::native_to_unicode", XS_utf8_native_to_unicode, NULL},
+    {"utf8::unicode_to_native", XS_utf8_unicode_to_native, NULL},
+    {"Internals::SvREADONLY", XS_Internals_SvREADONLY, "\\[$%@];$"},
+    {"Internals::SvREFCNT", XS_Internals_SvREFCNT, "\\[$%@];$"},
+    {"Internals::hv_clear_placeholders", XS_Internals_hv_clear_placehold, "\\%"},
+    {"PerlIO::get_layers", XS_PerlIO_get_layers, "*;@"},
+    {"Internals::hash_seed", XS_Internals_hash_seed, ""},
+    {"Internals::rehash_seed", XS_Internals_rehash_seed, ""},
+    {"Internals::HvREHASH", XS_Internals_HvREHASH, "\\%"},
+    {"re::is_regexp", XS_re_is_regexp, "$"},
+    {"re::regname", XS_re_regname, ";$$"},
+    {"re::regnames", XS_re_regnames, ";$"},
+    {"re::regnames_count", XS_re_regnames_count, ""},
+    {"re::regexp_pattern", XS_re_regexp_pattern, "$"},
+    {"Tie::Hash::NamedCapture::FETCH", XS_Tie_Hash_NamedCapture_FETCH, NULL},
+    {"Tie::Hash::NamedCapture::STORE", XS_Tie_Hash_NamedCapture_STORE, NULL},
+    {"Tie::Hash::NamedCapture::DELETE", XS_Tie_Hash_NamedCapture_DELETE, NULL},
+    {"Tie::Hash::NamedCapture::CLEAR", XS_Tie_Hash_NamedCapture_CLEAR, NULL},
+    {"Tie::Hash::NamedCapture::EXISTS", XS_Tie_Hash_NamedCapture_EXISTS, NULL},
+    {"Tie::Hash::NamedCapture::FIRSTKEY", XS_Tie_Hash_NamedCapture_FIRSTK, NULL},
+    {"Tie::Hash::NamedCapture::NEXTKEY", XS_Tie_Hash_NamedCapture_NEXTK, NULL},
+    {"Tie::Hash::NamedCapture::SCALAR", XS_Tie_Hash_NamedCapture_SCALAR, NULL},
+    {"Tie::Hash::NamedCapture::flags", XS_Tie_Hash_NamedCapture_flags, NULL}
+};
+
+void
+Perl_boot_core_UNIVERSAL(pTHX)
+{
+    dVAR;
+    static const char file[] = __FILE__;
+    struct xsub_details *xsub = details;
+    const struct xsub_details *end
+	= details + sizeof(details) / sizeof(details[0]);
+
+    do {
+	newXS_flags(xsub->name, xsub->xsub, file, xsub->proto, 0);
+    } while (++xsub < end);
+
+    /* register the overloading (type 'A') magic */
+    PL_amagic_generation++;
+
+    /* Providing a Regexp::DESTROY fixes #21347. See test in t/op/ref.t  */
+    CvFILE(newCONSTSUB(get_hv("Regexp::", GV_ADD), "DESTROY", NULL))
+	= (char *)file;
+}
 
 /*
  * Local variables:

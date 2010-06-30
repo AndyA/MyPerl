@@ -2070,6 +2070,7 @@ cpan/Test-Harness/lib/TAP/Formatter/Console/Session.pm	A parser for Test Anythin
 cpan/Test-Harness/lib/TAP/Formatter/File.pm		A parser for Test Anything Protocol
 cpan/Test-Harness/lib/TAP/Formatter/File/Session.pm	A parser for Test Anything Protocol
 cpan/Test-Harness/lib/TAP/Formatter/Session.pm		A parser for Test Anything Protocol
+cpan/Test-Harness/lib/TAP/Harness/Beyond.pod
 cpan/Test-Harness/lib/TAP/Harness.pm			A parser for Test Anything Protocol
 cpan/Test-Harness/lib/TAP/Object.pm			A parser for Test Anything Protocol
 cpan/Test-Harness/lib/TAP/Parser/Aggregator.pm		A parser for Test Anything Protocol
@@ -2094,12 +2095,20 @@ cpan/Test-Harness/lib/TAP/Parser/Result/YAML.pm		A parser for Test Anything Prot
 cpan/Test-Harness/lib/TAP/Parser/Scheduler/Job.pm	A parser for Test Anything Protocol
 cpan/Test-Harness/lib/TAP/Parser/Scheduler.pm		A parser for Test Anything Protocol
 cpan/Test-Harness/lib/TAP/Parser/Scheduler/Spinner.pm	A parser for Test Anything Protocol
+cpan/Test-Harness/lib/TAP/Parser/SourceHandler/Executable.pm
+cpan/Test-Harness/lib/TAP/Parser/SourceHandler/File.pm
+cpan/Test-Harness/lib/TAP/Parser/SourceHandler/Handle.pm
+cpan/Test-Harness/lib/TAP/Parser/SourceHandler/Perl.pm
+cpan/Test-Harness/lib/TAP/Parser/SourceHandler/pgTAP.pm
 cpan/Test-Harness/lib/TAP/Parser/SourceHandler.pm		A parser for Test Anything Protocol
+cpan/Test-Harness/lib/TAP/Parser/SourceHandler/RawTAP.pm
 cpan/Test-Harness/lib/TAP/Parser/Source.pm		A parser for Test Anything Protocol
 cpan/Test-Harness/lib/TAP/Parser/Utils.pm		A parser for Test Anything Protocol
 cpan/Test-Harness/lib/TAP/Parser/YAMLish/Reader.pm	A parser for Test Anything Protocol
 cpan/Test-Harness/lib/TAP/Parser/YAMLish/Writer.pm	A parser for Test Anything Protocol
 cpan/Test-Harness/lib/Test/Harness.pm			A test harness
+cpan/Test-Harness/MANIFEST				
+cpan/Test-Harness/MANIFEST.CUMMULATIVE			
 cpan/Test-Harness/t/000-load.t				Test::Harness test
 cpan/Test-Harness/t/aggregator.t			Test::Harness test
 cpan/Test-Harness/t/bailout.t				Test::Harness test
@@ -2144,6 +2153,7 @@ cpan/Test-Harness/t/lib/MyShebangger.pm				Test::Harness test
 cpan/Test-Harness/t/lib/MySourceHandler.pm				Test::Harness test
 cpan/Test-Harness/t/lib/NoFork.pm			Module for testing Test::Harness
 cpan/Test-Harness/t/lib/NOP.pm				Module for testing Test::Harness
+cpan/Test-Harness/t/lib/TAP/Harness/TestSubclass.pm
 cpan/Test-Harness/t/lib/TAP/Parser/SubclassTest.pm	Module for testing Test::Harness
 cpan/Test-Harness/t/multiplexer.t			Test::Harness test
 cpan/Test-Harness/t/nofork-mux.t			Test::Harness test
@@ -3889,6 +3899,7 @@ pod/perl5113delta.pod		Perl changes in version 5.11.3
 pod/perl5114delta.pod		Perl changes in version 5.11.4
 pod/perl5115delta.pod		Perl changes in version 5.11.5
 pod/perl5120delta.pod		Perl changes in version 5.12.0
+pod/perl5121delta.pod		Perl changes in version 5.12.1
 pod/perl5130delta.pod		Perl changes in version 5.13.0
 pod/perl5131delta.pod		Perl changes in version 5.13.1
 pod/perl5132delta.pod		Perl changes in version 5.13.2
@@ -4494,6 +4505,7 @@ t/op/read.t			See if read() works
 t/op/recurse.t			See if deep recursion works
 t/op/ref.t			See if refs and objects work
 t/op/repeat.t			See if x operator works
+t/op/require_errors.t		See if errors from require are reported correctly
 t/op/reset.t			See if reset operator works
 t/op/reverse.t			See if reverse operator works
 t/op/runlevel.t			See if die() works from perl_call_*()
